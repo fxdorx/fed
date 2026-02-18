@@ -1,0 +1,2476 @@
+-- fedscripts
+
+-- fedscripts Universal (works in every game)
+-- v2.1
+
+local repo = 'https://raw.githubusercontent.com/fxdorx/LinoriaLib/main/'
+
+local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
+local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
+local SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
+local Lighting = game:GetService("Lighting")
+
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Humanoid = Character:WaitForChild("Humanoid")
+local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+local camera = Workspace.CurrentCamera
+
+local defaultWalkspeed = Humanoid.WalkSpeed
+
+local InfJumpEnabled = false
+local FlyEnabled = false
+local FlySpeed = 50
+local flyConnection
+local WalkSpeedEnabled = false
+local WalkSpeed = 16
+local walkSpeedConnection
+local ClickTeleportEnabled = false
+local StayGroundedEnabled = false
+local stayGroundedConnection
+local LoopResetEnabled = false
+local loopResetConnection
+local LoopResetDistance = 20
+local antiFlingConnection = nil
+local savedPosition = nil
+local AntiFlingEnabled = false
+
+local SavedWaypoints = {}
+local WaypointCounter = 0
+local SpamRandomTeleportEnabled = false
+local spamRandomConnection
+local SpamTeleportSpeed = 1
+local SelectedPlayerForTP = nil
+local LoopTeleportPlayerEnabled = false
+local loopTeleportConnection
+local LoopTeleportMode = "Behind"
+local LoopTeleportDistance = 3
+
+local ChamsEnabled = false
+local ChamsColor = Color3.fromRGB(255, 0, 0)
+local ChamsTeamCheck = false
+local highlightedCharacters = {}
+
+local BoxESPEnabled = false
+local BoxESPColor = Color3.fromRGB(255, 255, 255)
+local BoxTeamColor = false
+local boxDrawings = {}
+
+local SkeletonESPEnabled = false
+local SkeletonESPColor = Color3.fromRGB(255, 255, 255)
+local SkeletonTeamColor = false
+local skeletonDrawings = {}
+local skeletonConnections = {}
+
+local TracersEnabled = false
+local TracerColor = Color3.fromRGB(255, 255, 255)
+local tracerDrawings = {}
+
+local AimbotEnabled = false
+local AimbotFOV = 150
+local AimbotSmoothing = 50
+local AimbotFOVColor = Color3.fromRGB(255, 255, 255)
+local AimbotShowFOV = false
+local AimbotTeamCheck = false
+local RageaimEnabled = false
+local aiming = false
+local fovCircle = nil
+
+local ThirdPersonDistance = 15
+local ThirdPersonEnabled = false
+local FreeCamEnabled = false
+local freeCamConnection = nil
+local WalkFlingEnabled = false
+local FakeoutInProgress = false
+
+local PlayerCheckEnabled = false
+local playerCheckConnection
+local PlayerCheckDelay = 0.5
+local Loopvoid = false
+local SelectedPlayerForFling = nil
+local ViewPlayerEnabled = false
+local SelectedPlayerToView = nil
+local MessageText = ""
+local SpamMessageEnabled = false
+local SpamMessageDelay = 1
+
+local LOOPPROTECT = nil
+local flingManager = {lFlingOldPos = nil}
+local OrgDestroyHeight = Workspace.FallenPartsDestroyHeight
+
+local StatusLabelMain = nil
+local StatusLabelTeleport = nil
+local StatusLabelServer = nil
+
+local Window = Library:CreateWindow({
+    Title = 'fedscripts | Universal',
+    Center = true,
+    AutoShow = true,
+    TabPadding = 8,
+    MenuFadeTime = 0.2
+})
+
+local Tabs = {
+    Main = Window:AddTab('Main'),
+    Teleports = Window:AddTab('Teleports'),
+    Server = Window:AddTab('Server'),
+    UpdateLog = Window:AddTab('Update Log'),
+    ['UI Settings'] = Window:AddTab('UI Settings'),
+}
+
+local function getClosestPlayer()
+    local closest = nil
+    if not RageaimEnabled then
+        local shortestDistance = math.huge
+        local mousePos = UserInputService:GetMouseLocation()
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
+                if AimbotTeamCheck and player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then continue end
+                local screenPos, onScreen = camera:WorldToScreenPoint(player.Character.Head.Position)
+                if onScreen then
+                    local distance = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
+                    if distance < shortestDistance and distance <= AimbotFOV then
+                        closest = player
+                        shortestDistance = distance
+                    end
+                end
+            end
+        end
+    else
+        local shortestDistance = math.huge
+        local localPos = HumanoidRootPart.Position
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                if AimbotTeamCheck and player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then continue end
+                local distance = (player.Character.HumanoidRootPart.Position - localPos).Magnitude
+                if distance < shortestDistance then
+                    closest = player
+                    shortestDistance = distance
+                end
+            end
+        end
+    end
+    return closest
+end
+
+local function sendMessage(msg)
+    pcall(function()
+        if game:GetService("TextChatService").ChatVersion == Enum.ChatVersion.TextChatService then
+            local textChannel = game:GetService("TextChatService").TextChannels:FindFirstChild("RBXGeneral")
+            if textChannel then textChannel:SendAsync(msg) end
+        else
+            game:GetService("ReplicatedStorage"):FindFirstChild("DefaultChatSystemChatEvents").SayMessageRequest:FireServer(msg, "All")
+        end
+    end)
+end
+
+
+-- MAIN TAB
+
+local LeftGroupBoxLocal = Tabs.Main:AddLeftGroupbox('Local')
+local RightGroupBoxPlayers = Tabs.Main:AddRightGroupbox('Players')
+
+-- Infinite Jump
+LeftGroupBoxLocal:AddToggle('InfJump', {
+    Text = 'Infinite Jump',
+    Default = false,
+    Tooltip = 'Continuously jump while space is held',
+    Callback = function(Value)
+        InfJumpEnabled = Value
+    end
+})
+
+UserInputService.JumpRequest:Connect(function()
+    if InfJumpEnabled and Character and Humanoid and Humanoid:GetState() ~= Enum.HumanoidStateType.Seated then
+        Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end)
+
+-- Walk Speed (multi-method loop to bypass anti-cheat)
+LeftGroupBoxLocal:AddToggle('WalkSpeed', {
+    Text = 'Walk Speed',
+    Default = false,
+    Tooltip = 'Loop-sets walk speed every step, works against most anti-cheat',
+    Callback = function(Value)
+        WalkSpeedEnabled = Value
+        if WalkSpeedEnabled then
+            if walkSpeedConnection then walkSpeedConnection:Disconnect() end
+
+            walkSpeedConnection = RunService.Heartbeat:Connect(function()
+                if not WalkSpeedEnabled then return end
+
+                -- Re-grab humanoid every tick in case of respawn
+                local char = LocalPlayer.Character
+                if not char then return end
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if not hum then return end
+
+                -- Method 1: direct property
+                hum.WalkSpeed = WalkSpeed
+
+                -- Method 2: fire via ChangeProperty if method 1 gets reverted
+                if hum.WalkSpeed ~= WalkSpeed then
+                    hum.WalkSpeed = WalkSpeed
+                end
+
+                -- Method 3: if the game uses a BodyVelocity to cap speed, destroy it
+                local hrp = char:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    for _, v in ipairs(hrp:GetChildren()) do
+                        if v:IsA("BodyVelocity") or v:IsA("BodyForce") then
+                            v:Destroy()
+                        end
+                    end
+                end
+
+                -- Method 4: re-apply via RootPart velocity nudge to prevent dampening
+                if hrp and hum.MoveDirection.Magnitude > 0 then
+                    local currentSpeed = Vector3.new(
+                        hrp.AssemblyLinearVelocity.X,
+                        0,
+                        hrp.AssemblyLinearVelocity.Z
+                    ).Magnitude
+
+                    if currentSpeed > 0 and currentSpeed < WalkSpeed * 0.85 then
+                        local dir = hrp.AssemblyLinearVelocity * Vector3.new(1, 0, 1)
+                        if dir.Magnitude > 0 then
+                            hrp.AssemblyLinearVelocity = Vector3.new(
+                                dir.Unit.X * WalkSpeed,
+                                hrp.AssemblyLinearVelocity.Y,
+                                dir.Unit.Z * WalkSpeed
+                            )
+                        end
+                    end
+                end
+            end)
+
+        else
+            if walkSpeedConnection then
+                walkSpeedConnection:Disconnect()
+                walkSpeedConnection = nil
+            end
+            local char = LocalPlayer.Character
+            if char then
+                local hum = char:FindFirstChildOfClass("Humanoid")
+                if hum then hum.WalkSpeed = defaultWalkspeed end
+            end
+        end
+    end
+})
+
+LeftGroupBoxLocal:AddSlider('WalkSpeedAmount', {
+    Text = 'Speed Amount',
+    Default = 16,
+    Min = 16,
+    Max = 300,
+    Rounding = 0,
+    Compact = false,
+    Callback = function(Value)
+        WalkSpeed = Value
+    end
+})
+
+LeftGroupBoxLocal:AddDivider()
+
+-- Fly
+LeftGroupBoxLocal:AddToggle('Fly', {
+    Text = 'Fly',
+    Default = false,
+    Tooltip = 'WASD to move, Space/Ctrl for up and down',
+    Callback = function(Value)
+        FlyEnabled = Value
+        if FlyEnabled then
+            local bodyVelocity = Instance.new("BodyVelocity")
+            bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+            bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+            bodyVelocity.Parent = HumanoidRootPart
+            flyConnection = RunService.Heartbeat:Connect(function()
+                if not FlyEnabled then return end
+                local moveDirection = Vector3.new(0, 0, 0)
+                local cameraCFrame = camera.CFrame
+                if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDirection = moveDirection + cameraCFrame.LookVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDirection = moveDirection - cameraCFrame.LookVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDirection = moveDirection - cameraCFrame.RightVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDirection = moveDirection + cameraCFrame.RightVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDirection = moveDirection + Vector3.new(0, 1, 0) end
+                if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveDirection = moveDirection - Vector3.new(0, 1, 0) end
+                if moveDirection.Magnitude > 0 then
+                    bodyVelocity.Velocity = moveDirection.Unit * FlySpeed
+                else
+                    bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+                end
+            end)
+        else
+            if flyConnection then flyConnection:Disconnect() end
+            if HumanoidRootPart:FindFirstChildOfClass("BodyVelocity") then
+                HumanoidRootPart:FindFirstChildOfClass("BodyVelocity"):Destroy()
+            end
+        end
+    end
+})
+
+LeftGroupBoxLocal:AddSlider('FlySpeed', {
+    Text = 'Fly Speed',
+    Default = 50,
+    Min = 10,
+    Max = 500,
+    Rounding = 0,
+    Compact = false,
+    Callback = function(Value)
+        FlySpeed = Value
+    end
+})
+
+LeftGroupBoxLocal:AddDivider()
+
+-- Stay Grounded
+LeftGroupBoxLocal:AddToggle('StayGrounded', {
+    Text = 'Stay Grounded',
+    Default = false,
+    Tooltip = 'Pins you to the ground every frame - no escape no matter how high you go',
+    Callback = function(Value)
+        StayGroundedEnabled = Value
+        if StayGroundedEnabled then
+            stayGroundedConnection = RunService.Heartbeat:Connect(function()
+                if not StayGroundedEnabled then return end
+                local raycastParams = RaycastParams.new()
+                raycastParams.FilterDescendantsInstances = {Character}
+                raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+                -- Cast from way above current position so we find ground even if we're at 10000 studs
+                local castOrigin = Vector3.new(HumanoidRootPart.Position.X, HumanoidRootPart.Position.Y + 50, HumanoidRootPart.Position.Z)
+                local result = Workspace:Raycast(castOrigin, Vector3.new(0, -100000, 0), raycastParams)
+                if result then
+                    local groundY = result.Position.Y + 3
+                    if HumanoidRootPart.Position.Y > groundY + 0.1 then
+                        -- Stay anchored this frame, slam to ground, kill all velocity
+                        -- Keep anchored so physics absolutely cannot push us back up
+                        HumanoidRootPart.Anchored = true
+                        HumanoidRootPart.CFrame = CFrame.new(
+                            HumanoidRootPart.Position.X,
+                            groundY,
+                            HumanoidRootPart.Position.Z
+                        ) * CFrame.Angles(0, HumanoidRootPart.CFrame:ToEulerAnglesYXZ(), 0)
+                        HumanoidRootPart.Velocity = Vector3.new(0, 0, 0)
+                        HumanoidRootPart.RotVelocity = Vector3.new(0, 0, 0)
+                    else
+                        -- We are at ground level - unanchor so we can walk normally
+                        HumanoidRootPart.Anchored = false
+                    end
+                end
+            end)
+        else
+            if stayGroundedConnection then
+                stayGroundedConnection:Disconnect()
+                stayGroundedConnection = nil
+            end
+            if HumanoidRootPart then HumanoidRootPart.Anchored = false end
+        end
+    end
+})
+
+-- Loop Reset
+LeftGroupBoxLocal:AddToggle('LoopReset', {
+    Text = 'Loop Reset When Players Nearby',
+    Default = false,
+    Tooltip = 'Resets your character when a player gets close',
+    Callback = function(Value)
+        LoopResetEnabled = Value
+        if LoopResetEnabled then
+            loopResetConnection = RunService.Heartbeat:Connect(function()
+                if not LoopResetEnabled then return end
+                for _, player in pairs(Players:GetPlayers()) do
+                    if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                        local distance = (HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude
+                        if distance <= LoopResetDistance then
+                            Character:BreakJoints()
+                            wait(2)
+                            break
+                        end
+                    end
+                end
+            end)
+        else
+            if loopResetConnection then loopResetConnection:Disconnect() end
+        end
+    end
+})
+
+LeftGroupBoxLocal:AddSlider('LoopResetDistance', {
+    Text = 'Reset Detection Distance',
+    Default = 20,
+    Min = 5,
+    Max = 100,
+    Rounding = 0,
+    Compact = false,
+    Callback = function(Value)
+        LoopResetDistance = Value
+    end
+})
+
+LeftGroupBoxLocal:AddDivider()
+
+-- Click Teleport
+LeftGroupBoxLocal:AddLabel('Click Teleport'):AddKeyPicker('ClickTP', {
+    Default = 'Q',
+    SyncToggleState = false,
+    Mode = 'Toggle',
+    Text = 'Click Teleport',
+    NoUI = false,
+    Callback = function(Value)
+        ClickTeleportEnabled = Value
+    end
+})
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.Q and Options.ClickTP and Options.ClickTP:GetState() then
+        local Mouse = LocalPlayer:GetMouse()
+        if Mouse.Target then
+            HumanoidRootPart.CFrame = CFrame.new(Mouse.Hit.Position + Vector3.new(0, 3, 0))
+        end
+    end
+end)
+
+-- Force Reset
+LeftGroupBoxLocal:AddButton({
+    Text = 'Force Reset',
+    Func = function()
+        HumanoidRootPart.CFrame = CFrame.new(0, -500, 0)
+        wait(0.5)
+        Character:BreakJoints()
+    end,
+    DoubleClick = false,
+    Tooltip = 'Teleports under the map and breaks joints'
+})
+
+-- Fakeout
+LeftGroupBoxLocal:AddButton({
+    Text = 'Fakeout',
+    Func = function()
+        if not FakeoutInProgress and HumanoidRootPart then
+            FakeoutInProgress = true
+            local originalPos = HumanoidRootPart.CFrame
+            HumanoidRootPart.CFrame = CFrame.new(originalPos.Position + Vector3.new(0, -500, 0))
+            wait(1)
+            HumanoidRootPart.CFrame = originalPos
+            wait(0.5)
+            FakeoutInProgress = false
+        end
+    end,
+    DoubleClick = false,
+    Tooltip = 'Briefly dips into the void and returns'
+})
+
+
+LeftGroupBoxLocal:AddDivider()
+
+do
+    local antiFlingActive = false
+    local lockedCFrame = nil
+    local heartbeatConn = nil
+    local charConn = nil
+
+    local function getHRP()
+        local char = LocalPlayer.Character
+        return char and char:FindFirstChild("HumanoidRootPart")
+    end
+
+    local function getHumanoid()
+        local char = LocalPlayer.Character
+        return char and char:FindFirstChildOfClass("Humanoid")
+    end
+
+    local function freezeAll(hrp)
+        local char = hrp.Parent
+        if not char then return end
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.AssemblyLinearVelocity = Vector3.zero
+                part.AssemblyAngularVelocity = Vector3.zero
+            end
+        end
+        hrp.AssemblyLinearVelocity = Vector3.zero
+        hrp.AssemblyAngularVelocity = Vector3.zero
+    end
+
+    local function isOnGround(hrp)
+        -- Raycast straight down from HRP, if it hits within ~3.5 studs we are grounded
+        local rayOrigin = hrp.Position
+        local rayDirection = Vector3.new(0, -3.5, 0)
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterDescendantsInstances = {hrp.Parent}
+        raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+        local result = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+        return result ~= nil
+    end
+
+    local function startLoop()
+        if heartbeatConn then heartbeatConn:Disconnect() end
+
+        local hrp = getHRP()
+        if not hrp then return end
+
+        lockedCFrame = hrp.CFrame
+        local settleTime = tick() + 1.5
+        local stillTimer = 0
+
+        heartbeatConn = RunService.Heartbeat:Connect(function(dt)
+            if not antiFlingActive then return end
+
+            local h = getHRP()
+            if not h then return end
+
+            local vel = h.AssemblyLinearVelocity
+            local hSpeed = Vector3.new(vel.X, 0, vel.Z).Magnitude
+            local vSpeed = vel.Y
+
+            local isFling = (hSpeed > 40) or (vSpeed < -45) or (vSpeed > 75)
+
+            if isFling then
+                h.Anchored = true
+                freezeAll(h)
+                h.CFrame = lockedCFrame
+                freezeAll(h)
+
+                local hum = getHumanoid()
+                if hum then hum.PlatformStand = true end
+
+                task.defer(function()
+                    if not antiFlingActive then return end
+                    local h2 = getHRP()
+                    if h2 then
+                        h2.Anchored = false
+                        h2.AssemblyLinearVelocity = Vector3.zero
+                        h2.AssemblyAngularVelocity = Vector3.zero
+                        h2.CFrame = lockedCFrame
+                    end
+                    local hum2 = getHumanoid()
+                    if hum2 then hum2.PlatformStand = false end
+                end)
+
+            else
+                local hum = getHumanoid()
+                local grounded = isOnGround(h)
+                -- FloorMaterial being Air means they are airborne
+                local onFloor = hum and hum.FloorMaterial ~= Enum.Material.Air
+
+                -- Must be: past settle time, on the ground (both raycast AND FloorMaterial agree),
+                -- completely still horizontally, and not bouncing vertically
+                if tick() > settleTime
+                    and grounded
+                    and onFloor
+                    and hSpeed < 2
+                    and math.abs(vSpeed) < 1
+                then
+                    stillTimer = stillTimer + dt
+                    if stillTimer >= 0.3 then
+                        lockedCFrame = h.CFrame
+                    end
+                else
+                    stillTimer = 0
+                end
+            end
+        end)
+    end
+
+    local function stopLoop()
+        if heartbeatConn then
+            heartbeatConn:Disconnect()
+            heartbeatConn = nil
+        end
+        local hrp = getHRP()
+        if hrp then hrp.Anchored = false end
+        local hum = getHumanoid()
+        if hum then hum.PlatformStand = false end
+        lockedCFrame = nil
+    end
+
+    local function onCharacterAdded(char)
+        lockedCFrame = nil
+        if antiFlingActive then
+            char:WaitForChild("HumanoidRootPart")
+            startLoop()
+        end
+    end
+
+    if charConn then charConn:Disconnect() end
+    charConn = LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
+
+    LeftGroupBoxLocal:AddToggle('AntiFling', {
+        Text = 'Anti Fling',
+        Default = false,
+        Tooltip = 'Snaps you back to your last grounded still position the moment a fling is detected',
+        Callback = function(Value)
+            antiFlingActive = Value
+            if Value then
+                startLoop()
+            else
+                stopLoop()
+            end
+        end
+    })
+end
+
+
+-- Walk Fling
+LeftGroupBoxLocal:AddToggle('WalkFling', {
+    Text = 'Walk Fling',
+    Default = false,
+    Tooltip = 'Flings players you walk into',
+    Callback = function(Value)
+        WalkFlingEnabled = Value
+        if Value then
+            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+            Humanoid.BreakJointsOnDeath = false
+            HumanoidRootPart.CanCollide = false
+            Humanoid:ChangeState(11)
+            spawn(function()
+                while WalkFlingEnabled and HumanoidRootPart and HumanoidRootPart.Parent do
+                    RunService.Heartbeat:Wait()
+                    local vel = HumanoidRootPart.Velocity
+                    HumanoidRootPart.Velocity = vel * 99999999 + Vector3.new(0, 99999999, 0)
+                    RunService.RenderStepped:Wait()
+                    HumanoidRootPart.Velocity = vel
+                    RunService.Stepped:Wait()
+                    HumanoidRootPart.Velocity = vel + Vector3.new(0, 0.1, 0)
+                end
+            end)
+        else
+            if Character and Humanoid then
+                Humanoid:ChangeState(Enum.HumanoidStateType.Landed)
+            end
+        end
+    end
+})
+
+LeftGroupBoxLocal:AddDivider()
+
+-- Camera Modes
+LeftGroupBoxLocal:AddLabel('Camera Modes')
+
+do
+    local droneCamActive = false
+    local droneConn = nil
+    local charConn2 = nil
+    local dronePart = nil
+    local droneSpeed = 60
+    local droneFastSpeed = 180
+    local droneSensitivity = 0.25
+
+    local Camera = workspace.CurrentCamera
+    local UIS = game:GetService("UserInputService")
+    local RunService = game:GetService("RunService")
+    local Mouse = LocalPlayer:GetMouse()
+
+    local yaw = 0
+    local pitch = 0
+    local lastMousePos = nil
+
+    local function getHRP()
+        local char = LocalPlayer.Character
+        return char and char:FindFirstChild("HumanoidRootPart")
+    end
+
+    local function getHumanoid()
+        local char = LocalPlayer.Character
+        return char and char:FindFirstChildOfClass("Humanoid")
+    end
+
+    local function lockCharacter(locked)
+        local hrp = getHRP()
+        local hum = getHumanoid()
+        if hrp then
+            hrp.Anchored = locked
+            if locked then
+                hrp.AssemblyLinearVelocity = Vector3.zero
+                hrp.AssemblyAngularVelocity = Vector3.zero
+            end
+        end
+        if hum then
+            hum.WalkSpeed = locked and 0 or 16
+            hum.JumpPower = locked and 0 or 50
+            hum.PlatformStand = locked
+        end
+    end
+
+    local function createDronePart()
+        local hrp = getHRP()
+        if not hrp then return nil end
+        local part = Instance.new("Part")
+        part.Name = "DroneCamPart"
+        part.Size = Vector3.new(0.1, 0.1, 0.1)
+        part.Transparency = 1
+        part.CanCollide = false
+        part.CanQuery = false
+        part.CanTouch = false
+        part.Anchored = true
+        part.CFrame = hrp.CFrame * CFrame.new(0, 3, 0)
+        part.Parent = workspace
+        return part
+    end
+
+    local function startDrone()
+        if droneConn then
+            droneConn:Disconnect()
+            droneConn = nil
+        end
+
+        local hrp = getHRP()
+        if not hrp then return end
+
+        lockCharacter(true)
+
+        dronePart = createDronePart()
+        if not dronePart then return end
+
+        local lv = hrp.CFrame.LookVector
+        yaw = math.atan2(-lv.X, -lv.Z)
+        pitch = 0
+        lastMousePos = nil
+
+        Camera.CameraType = Enum.CameraType.Scriptable
+        Camera.CFrame = dronePart.CFrame
+        UIS.MouseIconEnabled = false
+
+        droneConn = RunService.RenderStepped:Connect(function(dt)
+            if not droneCamActive then return end
+
+            -- Force camera type back EVERY frame so clicks cant steal it
+            if Camera.CameraType ~= Enum.CameraType.Scriptable then
+                Camera.CameraType = Enum.CameraType.Scriptable
+            end
+
+            -- Force camera subject to nil so Roblox default controller has nothing to attach to
+            if Camera.CameraSubject ~= nil then
+                Camera.CameraSubject = nil
+            end
+
+            local mx = Mouse.X
+            local my = Mouse.Y
+
+            if lastMousePos then
+                local dx = mx - lastMousePos.X
+                local dy = my - lastMousePos.Y
+
+                if math.abs(dx) < 100 and math.abs(dy) < 100 then
+                    yaw   = yaw - dx * droneSensitivity * dt
+                    pitch = math.clamp(
+                        pitch - dy * droneSensitivity * dt,
+                        math.rad(-89),
+                        math.rad(89)
+                    )
+                end
+            end
+
+            lastMousePos = Vector2.new(mx, my)
+
+            local camCF   = CFrame.Angles(0, yaw, 0) * CFrame.Angles(pitch, 0, 0)
+            local forward = camCF.LookVector
+            local right   = camCF.RightVector
+            local worldUp = Vector3.new(0, 1, 0)
+
+            local moveDir = Vector3.zero
+            if UIS:IsKeyDown(Enum.KeyCode.W)     then moveDir += forward end
+            if UIS:IsKeyDown(Enum.KeyCode.S)     then moveDir -= forward end
+            if UIS:IsKeyDown(Enum.KeyCode.A)     then moveDir -= right   end
+            if UIS:IsKeyDown(Enum.KeyCode.D)     then moveDir += right   end
+            if UIS:IsKeyDown(Enum.KeyCode.Space) then moveDir += worldUp end
+            if UIS:IsKeyDown(Enum.KeyCode.Q)     then moveDir -= worldUp end
+
+            local speed = UIS:IsKeyDown(Enum.KeyCode.LeftShift)
+                and droneFastSpeed
+                or droneSpeed
+
+            if moveDir.Magnitude > 0 then
+                moveDir = moveDir.Unit
+            end
+
+            local newPos = dronePart.CFrame.Position + moveDir * speed * dt
+            dronePart.CFrame = CFrame.new(newPos)
+                * CFrame.Angles(0, yaw, 0)
+                * CFrame.Angles(pitch, 0, 0)
+
+            -- Force camera onto drone part every single frame no matter what
+            Camera.CFrame = dronePart.CFrame
+
+            local h = getHRP()
+            if h then
+                h.AssemblyLinearVelocity  = Vector3.zero
+                h.AssemblyAngularVelocity = Vector3.zero
+            end
+        end)
+    end
+
+    local function stopDrone()
+        if droneConn then
+            droneConn:Disconnect()
+            droneConn = nil
+        end
+
+        if dronePart then
+            dronePart:Destroy()
+            dronePart = nil
+        end
+
+        UIS.MouseIconEnabled = true
+        UIS.MouseBehavior    = Enum.MouseBehavior.Default
+
+        Camera.CameraType    = Enum.CameraType.Custom
+        local char = LocalPlayer.Character
+        Camera.CameraSubject = char
+            and char:FindFirstChildOfClass("Humanoid")
+            or nil
+
+        lockCharacter(false)
+        lastMousePos = nil
+    end
+
+    local function onCharacterAdded2(char)
+        if droneCamActive then
+            char:WaitForChild("HumanoidRootPart")
+            stopDrone()
+            startDrone()
+        end
+    end
+
+    if charConn2 then charConn2:Disconnect() end
+    charConn2 = LocalPlayer.CharacterAdded:Connect(onCharacterAdded2)
+
+    LeftGroupBoxLocal:AddToggle('DroneCam', {
+        Text    = 'Drone Cam',
+        Default = false,
+        Tooltip = 'Free drone — WASD | Space up | Q down | Shift boost',
+        Callback = function(Value)
+            droneCamActive = Value
+            if Value then
+                startDrone()
+            else
+                stopDrone()
+            end
+        end
+    })
+end
+
+LeftGroupBoxLocal:AddToggle('FirstPerson', {
+    Text = 'First Person',
+    Default = false,
+    Tooltip = 'Locks camera to first person',
+    Callback = function(Value)
+        if Value then
+            LocalPlayer.CameraMaxZoomDistance = 0.5
+            LocalPlayer.CameraMinZoomDistance = 0.5
+            LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
+        else
+            LocalPlayer.CameraMaxZoomDistance = 128
+            LocalPlayer.CameraMinZoomDistance = 0.5
+            LocalPlayer.CameraMode = Enum.CameraMode.Classic
+        end
+    end
+})
+
+LeftGroupBoxLocal:AddToggle('ThirdPerson', {
+    Text = 'Third Person',
+    Default = false,
+    Tooltip = 'Enables third person at a set distance',
+    Callback = function(Value)
+        ThirdPersonEnabled = Value
+        if Value then
+            if Options.FirstPerson and Options.FirstPerson:GetState() then Options.FirstPerson:SetValue(false) end
+            if Options.FreeCam and Options.FreeCam:GetState() then Options.FreeCam:SetValue(false) end
+            LocalPlayer.CameraMode = Enum.CameraMode.Classic
+            LocalPlayer.CameraMaxZoomDistance = ThirdPersonDistance
+            LocalPlayer.CameraMinZoomDistance = ThirdPersonDistance
+            if Character then
+                for _, part in pairs(Character:GetDescendants()) do
+                    if part:IsA("BasePart") or part:IsA("Decal") then
+                        part.LocalTransparencyModifier = 0
+                    end
+                end
+            end
+        else
+            LocalPlayer.CameraMaxZoomDistance = 128
+            LocalPlayer.CameraMinZoomDistance = 0.5
+            LocalPlayer.CameraMode = Enum.CameraMode.Classic
+        end
+    end
+})
+
+LeftGroupBoxLocal:AddSlider('ThirdPersonDist', {
+    Text = 'Third Person Distance',
+    Default = 15,
+    Min = 5,
+    Max = 100,
+    Rounding = 0,
+    Compact = false,
+    Callback = function(Value)
+        ThirdPersonDistance = Value
+        if ThirdPersonEnabled then
+            LocalPlayer.CameraMaxZoomDistance = Value
+            LocalPlayer.CameraMinZoomDistance = Value
+        end
+    end
+})
+
+LeftGroupBoxLocal:AddButton({
+    Text = '5th Person View (50 studs)',
+    Func = function()
+        if Options.FirstPerson then Options.FirstPerson:SetValue(false) end
+        if Options.FreeCam then Options.FreeCam:SetValue(false) end
+        LocalPlayer.CameraMode = Enum.CameraMode.Classic
+        LocalPlayer.CameraMaxZoomDistance = 50
+        LocalPlayer.CameraMinZoomDistance = 50
+    end,
+    DoubleClick = false,
+    Tooltip = 'Camera fixed at 50 studs'
+})
+
+LeftGroupBoxLocal:AddButton({
+    Text = '10th Person View (100 studs)',
+    Func = function()
+        if Options.FirstPerson then Options.FirstPerson:SetValue(false) end
+        if Options.FreeCam then Options.FreeCam:SetValue(false) end
+        LocalPlayer.CameraMode = Enum.CameraMode.Classic
+        LocalPlayer.CameraMaxZoomDistance = 100
+        LocalPlayer.CameraMinZoomDistance = 100
+    end,
+    DoubleClick = false,
+    Tooltip = 'Camera fixed at 100 studs'
+})
+
+LeftGroupBoxLocal:AddLabel('Free Cam'):AddKeyPicker('FreeCam', {
+    Default = 'C',
+    SyncToggleState = true,
+    Mode = 'Toggle',
+    Text = 'Free Cam',
+    NoUI = false,
+    Callback = function(Value)
+        FreeCamEnabled = Value
+        if Value then
+            if Options.FirstPerson then Options.FirstPerson:SetValue(false) end
+            if Options.ThirdPerson then Options.ThirdPerson:SetValue(false) end
+            camera.CameraType = Enum.CameraType.Scriptable
+            UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+            local camCFrame = camera.CFrame
+            local pitch = 0
+            local yaw = 0
+            local mouseConn = UserInputService.InputChanged:Connect(function(input)
+                if not FreeCamEnabled then return end
+                if input.UserInputType == Enum.UserInputType.MouseMovement then
+                    yaw = yaw - input.Delta.X * 0.004
+                    pitch = math.clamp(pitch - input.Delta.Y * 0.004, -math.pi/2 + 0.1, math.pi/2 - 0.1)
+                end
+            end)
+            freeCamConnection = RunService.RenderStepped:Connect(function(dt)
+                if not FreeCamEnabled then
+                    if mouseConn then mouseConn:Disconnect() end
+                    return
+                end
+                local speed = 50 * dt
+                if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then speed = speed * 3 end
+                local rotation = CFrame.Angles(0, yaw, 0) * CFrame.Angles(pitch, 0, 0)
+                local move = Vector3.new(0, 0, 0)
+                if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + rotation.LookVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - rotation.LookVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - rotation.RightVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + rotation.RightVector end
+                if UserInputService:IsKeyDown(Enum.KeyCode.E) then move = move + Vector3.new(0, 1, 0) end
+                if UserInputService:IsKeyDown(Enum.KeyCode.Q) then move = move - Vector3.new(0, 1, 0) end
+                camCFrame = camCFrame + (move * speed)
+                camera.CFrame = CFrame.new(camCFrame.Position) * rotation
+            end)
+        else
+            if freeCamConnection then freeCamConnection:Disconnect() freeCamConnection = nil end
+            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+            camera.CameraType = Enum.CameraType.Custom
+            camera.CameraSubject = Humanoid
+        end
+    end
+})
+
+
+-- ==================================================
+-- AIMBOT (below Local on left)
+-- ==================================================
+
+local LeftGroupBoxAimbot = Tabs.Main:AddLeftGroupbox('Aimbot')
+
+LeftGroupBoxAimbot:AddToggle('Aimbot', {
+    Text = 'Aimbot',
+    Default = false,
+    Tooltip = 'Hold the aimbot key to lock on to players',
+    Callback = function(Value)
+        AimbotEnabled = Value
+    end
+})
+
+LeftGroupBoxAimbot:AddLabel('Aimbot Key'):AddKeyPicker('AimbotKeybind', {
+    Default = 'MB2',
+    SyncToggleState = false,
+    Mode = 'Hold',
+    Text = 'Aimbot Key',
+    NoUI = false,
+    Callback = function(Value)
+        aiming = Value
+    end
+})
+
+LeftGroupBoxAimbot:AddToggle('Rageaim', {
+    Text = 'Rage Aim',
+    Default = false,
+    Tooltip = 'Locks to the closest player by distance, ignoring FOV',
+    Callback = function(Value)
+        RageaimEnabled = Value
+    end
+})
+
+LeftGroupBoxAimbot:AddToggle('AimbotTeamCheck', {
+    Text = 'Team Check',
+    Default = false,
+    Tooltip = 'Skip players on your own team',
+    Callback = function(Value)
+        AimbotTeamCheck = Value
+    end
+})
+
+LeftGroupBoxAimbot:AddDivider()
+
+LeftGroupBoxAimbot:AddSlider('AimbotFOV', {
+    Text = 'FOV Radius',
+    Default = 150,
+    Min = 10,
+    Max = 500,
+    Rounding = 0,
+    Compact = false,
+    Callback = function(Value)
+        AimbotFOV = Value
+        if fovCircle then fovCircle.Radius = Value end
+    end
+})
+
+LeftGroupBoxAimbot:AddSlider('AimbotSmooth', {
+    Text = 'Smoothing',
+    Default = 50,
+    Min = 0,
+    Max = 100,
+    Rounding = 0,
+    Compact = false,
+    Callback = function(Value)
+        AimbotSmoothing = Value
+    end
+})
+
+LeftGroupBoxAimbot:AddToggle('ShowFOV', {
+    Text = 'Show FOV Circle',
+    Default = false,
+    Callback = function(Value)
+        AimbotShowFOV = Value
+        if Value then
+            fovCircle = Drawing.new("Circle")
+            fovCircle.Visible = true
+            fovCircle.Color = AimbotFOVColor
+            fovCircle.Thickness = 1
+            fovCircle.NumSides = 64
+            fovCircle.Radius = AimbotFOV
+            fovCircle.Filled = false
+            fovCircle.Transparency = 1
+        else
+            if fovCircle then fovCircle:Remove() fovCircle = nil end
+        end
+    end
+})
+
+LeftGroupBoxAimbot:AddLabel('FOV Color'):AddColorPicker('AimbotFOVColor', {
+    Default = Color3.fromRGB(255, 255, 255),
+    Title = 'FOV Circle Color',
+    Transparency = 0,
+    Callback = function(Value)
+        AimbotFOVColor = Value
+        if fovCircle then fovCircle.Color = Value end
+    end
+})
+
+RunService.RenderStepped:Connect(function()
+    if AimbotEnabled and Options.AimbotKeybind and Options.AimbotKeybind:GetState() then
+        local target = getClosestPlayer()
+        if target and target.Character and target.Character:FindFirstChild("Head") then
+            local targetPos = target.Character.Head.Position
+            local cameraPos = camera.CFrame.Position
+            local newCFrame = CFrame.new(cameraPos, targetPos)
+            local smoothFactor = math.clamp(1 - (AimbotSmoothing / 100), 0.01, 1)
+            camera.CFrame = camera.CFrame:Lerp(newCFrame, smoothFactor)
+        end
+    end
+    if fovCircle and fovCircle.Visible then
+        fovCircle.Position = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y / 2)
+        fovCircle.Radius = AimbotFOV
+        fovCircle.Color = AimbotFOVColor
+    end
+end)
+
+-- ==================================================
+-- PLAYERS (right side of Main)
+-- ==================================================
+
+RightGroupBoxPlayers:AddInput('PlayerNameInput', {
+    Default = '',
+    Numeric = false,
+    Finished = false,
+    Text = 'Type Player Name',
+    Tooltip = 'Manually type a username to select them',
+    Placeholder = 'Enter username...',
+    Callback = function(Value)
+        if Value ~= "" then
+            SelectedPlayerForTP = Value
+            SelectedPlayerForFling = Value
+            SelectedPlayerToView = Value
+        end
+    end
+})
+
+local playerListMain = {}
+local function RefreshMainPlayerDropdown()
+    playerListMain = {}
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            table.insert(playerListMain, player.Name)
+        end
+    end
+    if Options.MainPlayerDropdown then
+        Options.MainPlayerDropdown:SetValues(playerListMain)
+        if #playerListMain > 0 then
+            Options.MainPlayerDropdown:SetValue(playerListMain[1])
+            SelectedPlayerForTP = playerListMain[1]
+            SelectedPlayerForFling = playerListMain[1]
+            SelectedPlayerToView = playerListMain[1]
+        end
+    end
+end
+
+RefreshMainPlayerDropdown()
+
+RightGroupBoxPlayers:AddDropdown('MainPlayerDropdown', {
+    Values = playerListMain,
+    Default = 1,
+    Multi = false,
+    Text = 'Select Player',
+    Tooltip = 'Select a player from the server list',
+    Callback = function(Value)
+        SelectedPlayerForTP = Value
+        SelectedPlayerForFling = Value
+        SelectedPlayerToView = Value
+    end
+})
+
+RightGroupBoxPlayers:AddButton({
+    Text = 'Reload Player List',
+    Func = function()
+        RefreshMainPlayerDropdown()
+    end,
+    DoubleClick = false,
+    Tooltip = 'Refresh the dropdown with current players'
+})
+
+RightGroupBoxPlayers:AddDivider()
+
+RightGroupBoxPlayers:AddToggle('ViewPlayer', {
+    Text = 'View Player',
+    Default = false,
+    Tooltip = 'Spectate the selected player',
+    Callback = function(Value)
+        ViewPlayerEnabled = Value
+        if ViewPlayerEnabled and SelectedPlayerToView then
+            local targetPlayer = Players:FindFirstChild(SelectedPlayerToView)
+            if targetPlayer and targetPlayer.Character then
+                camera.CameraSubject = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
+            end
+        else
+            camera.CameraSubject = Humanoid
+        end
+    end
+})
+
+RightGroupBoxPlayers:AddDivider()
+
+RightGroupBoxPlayers:AddButton({
+    Text = 'Teleport to Player',
+    Func = function()
+        if SelectedPlayerForTP then
+            local targetPlayer = Players:FindFirstChild(SelectedPlayerForTP)
+            if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                HumanoidRootPart.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame
+            end
+        end
+    end,
+    DoubleClick = false,
+    Tooltip = 'Teleport once to the selected player'
+})
+
+RightGroupBoxPlayers:AddToggle('LoopTPPlayer', {
+    Text = 'Loop Teleport to Player',
+    Default = false,
+    Tooltip = 'Continuously teleports to the player at the chosen offset',
+    Callback = function(Value)
+        LoopTeleportPlayerEnabled = Value
+        if LoopTeleportPlayerEnabled then
+            loopTeleportConnection = RunService.Heartbeat:Connect(function()
+                if not LoopTeleportPlayerEnabled or not SelectedPlayerForTP then return end
+                local targetPlayer = Players:FindFirstChild(SelectedPlayerForTP)
+                if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                    local targetRoot = targetPlayer.Character.HumanoidRootPart
+                    local offset
+                    if LoopTeleportMode == "Behind" then
+                        offset = CFrame.new(0, 0, LoopTeleportDistance)
+                    elseif LoopTeleportMode == "In Front" then
+                        offset = CFrame.new(0, 0, -LoopTeleportDistance)
+                    elseif LoopTeleportMode == "Above" then
+                        offset = CFrame.new(0, LoopTeleportDistance, 0)
+                    elseif LoopTeleportMode == "Below" then
+                        offset = CFrame.new(0, -LoopTeleportDistance, 0)
+                    elseif LoopTeleportMode == "Underground" then
+                        offset = CFrame.new(0, -(LoopTeleportDistance + 5), 0)
+                    elseif LoopTeleportMode == "Exact" then
+                        offset = CFrame.new(0, 0, 0)
+                    else
+                        offset = CFrame.new(0, 0, LoopTeleportDistance)
+                    end
+                    HumanoidRootPart.CFrame = targetRoot.CFrame * offset
+                end
+            end)
+        else
+            if loopTeleportConnection then loopTeleportConnection:Disconnect() end
+        end
+    end
+})
+
+RightGroupBoxPlayers:AddDropdown('LoopTPMode', {
+    Values = { 'Behind', 'In Front', 'Above', 'Below', 'Underground', 'Exact' },
+    Default = 1,
+    Multi = false,
+    Text = 'Teleport Position',
+    Tooltip = 'Where to appear relative to the target',
+    Callback = function(Value)
+        LoopTeleportMode = Value
+    end
+})
+
+RightGroupBoxPlayers:AddSlider('LoopTPDistance', {
+    Text = 'Offset Distance',
+    Default = 3,
+    Min = 0,
+    Max = 25,
+    Rounding = 1,
+    Compact = false,
+    Callback = function(Value)
+        LoopTeleportDistance = Value
+    end
+})
+
+RightGroupBoxPlayers:AddDivider()
+
+local LoopFlingPlayerEnabled = false
+
+RightGroupBoxPlayers:AddButton({
+    Text = 'Fling Player (Once)',
+    Func = function()
+        if not SelectedPlayerForFling or SelectedPlayerForFling == "" then return end
+        local targetPlayer = Players:FindFirstChild(SelectedPlayerForFling)
+        if not targetPlayer or not targetPlayer.Character then return end
+        if _G.NexusSkidFling then _G.NexusSkidFling(targetPlayer) end
+    end,
+    DoubleClick = false,
+    Tooltip = 'Fling the selected player one time'
+})
+
+RightGroupBoxPlayers:AddToggle('LoopFlingPlayerMain', {
+    Text = 'Loop Fling Player',
+    Default = false,
+    Tooltip = 'Flings the player fast, snaps you back clean, repeats when they land',
+    Callback = function(Value)
+        LoopFlingPlayerEnabled = Value
+        if LoopFlingPlayerEnabled then
+            if not SelectedPlayerForFling or SelectedPlayerForFling == "" then
+                Options.LoopFlingPlayerMain:SetValue(false)
+                return
+            end
+            spawn(function()
+                while LoopFlingPlayerEnabled do
+                    local targetPlayer = Players:FindFirstChild(SelectedPlayerForFling)
+                    if not targetPlayer or not targetPlayer.Character then
+                        task.wait(1)
+                        continue
+                    end
+
+                    local _Humanoid = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    local _Root = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+                    if not _Humanoid or not _Root then
+                        task.wait(1)
+                        continue
+                    end
+
+                    -- Only fling when target is on the ground
+                    if _Root.Velocity.Magnitude > 50 then
+                        task.wait(0.3)
+                        continue
+                    end
+
+                    -- Save our position before starting
+                    local OldPosition = HumanoidRootPart.CFrame
+                    local Flinging = true
+
+                    -- The velocity pump that makes the fling actually work
+                    spawn(function()
+                        local Movel = 0.1
+                        repeat
+                            task.wait()
+                            local Velocity = HumanoidRootPart.Velocity
+                            HumanoidRootPart.Velocity = Velocity * 10000 + Vector3.new(0, 10000, 0)
+                            RunService.RenderStepped:Wait()
+                            HumanoidRootPart.Velocity = Velocity
+                            RunService.Stepped:Wait()
+                            HumanoidRootPart.Velocity = Velocity + Vector3.new(0, Movel, 0)
+                            Movel = Movel * -1
+                        until not Flinging
+                    end)
+
+                    -- Prediction-based positioning loop (2 second window or until flung)
+                    local Start = tick()
+                    camera.CameraSubject = _Humanoid
+                    Humanoid.Sit = false
+
+                    repeat
+                        task.wait()
+                        local Magnitude = _Root.Velocity.Magnitude
+                        local Direction = _Humanoid.MoveDirection or Vector3.zero
+                        local PredictionOffset
+
+                        if Magnitude < 5 then
+                            PredictionOffset = Vector3.new(0, math.random(-10, 4) / 10, 0)
+                        else
+                            local rng = 0.7 + math.random() * 7.3
+                            PredictionOffset = Direction * (Magnitude / rng) - Vector3.new(0, math.random(-10, 10) / 10, 0)
+                        end
+
+                        local PredictedCFrame = CFrame.new(_Root.Position + PredictionOffset)
+                        Humanoid.Sit = false
+                        HumanoidRootPart.CFrame = PredictedCFrame * CFrame.Angles(math.random(0, 360), 0, 0)
+
+                    until (tick() - Start >= 2)
+                        or (_Root.Velocity.Magnitude > 200)
+                        or not _Root
+                        or not _Root.Parent
+                        or not LoopFlingPlayerEnabled
+
+                    -- Stop the velocity pump
+                    Flinging = false
+
+                    -- Snap us back to original position cleanly
+                    HumanoidRootPart.CFrame = OldPosition
+                    for _, part in ipairs(Character:GetChildren()) do
+                        if part:IsA("BasePart") then
+                            part.Velocity = Vector3.new(0, 0, 0)
+                            part.RotVelocity = Vector3.new(0, 0, 0)
+                        end
+                    end
+                    camera.CameraSubject = Humanoid
+
+                    -- Wait for target to land before going again
+                    if LoopFlingPlayerEnabled then
+                        local landWait = tick()
+                        repeat
+                            task.wait(0.2)
+                            local tp = Players:FindFirstChild(SelectedPlayerForFling)
+                            if not tp or not tp.Character then break end
+                            local hrp = tp.Character:FindFirstChild("HumanoidRootPart")
+                            if not hrp then break end
+                            if tick() - landWait > 10 then break end
+                        until not LoopFlingPlayerEnabled
+                            or not Players:FindFirstChild(SelectedPlayerForFling)
+                            or (Players:FindFirstChild(SelectedPlayerForFling)
+                                and Players:FindFirstChild(SelectedPlayerForFling).Character
+                                and Players:FindFirstChild(SelectedPlayerForFling).Character:FindFirstChild("HumanoidRootPart")
+                                and Players:FindFirstChild(SelectedPlayerForFling).Character.HumanoidRootPart.Velocity.Magnitude < 25)
+                    end
+                end
+            end)
+        else
+            LoopFlingPlayerEnabled = false
+        end
+    end
+})
+
+RightGroupBoxPlayers:AddToggle('FlingAllPlayers', {
+    Text = 'Fling All Players',
+    Default = false,
+    Tooltip = 'Flings every player on the server continuously using the same method as Loop Fling',
+    Callback = function(Value)
+        Loopvoid = Value
+        if Loopvoid then
+            spawn(function()
+                while Loopvoid do
+                    -- Build list of grounded players this tick
+                    local playersToFling = {}
+                    for _, player in pairs(Players:GetPlayers()) do
+                        if player ~= LocalPlayer and player.Character then
+                            local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+                            local hum = player.Character:FindFirstChildOfClass("Humanoid")
+                            if hrp and hum and hrp.Velocity.Magnitude < 50 then
+                                table.insert(playersToFling, player)
+                            end
+                        end
+                    end
+
+                    for _, targetPlayer in ipairs(playersToFling) do
+                        if not Loopvoid then break end
+                        if not targetPlayer or not targetPlayer.Character then continue end
+
+                        local _Humanoid = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
+                        local _Root = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                        if not _Humanoid or not _Root then continue end
+                        if _Root.Velocity.Magnitude > 50 then continue end
+
+                        local OldPosition = HumanoidRootPart.CFrame
+                        local Flinging = true
+
+                        -- Velocity pump
+                        spawn(function()
+                            local Movel = 0.1
+                            repeat
+                                task.wait()
+                                local Velocity = HumanoidRootPart.Velocity
+                                HumanoidRootPart.Velocity = Velocity * 10000 + Vector3.new(0, 10000, 0)
+                                RunService.RenderStepped:Wait()
+                                HumanoidRootPart.Velocity = Velocity
+                                RunService.Stepped:Wait()
+                                HumanoidRootPart.Velocity = Velocity + Vector3.new(0, Movel, 0)
+                                Movel = Movel * -1
+                            until not Flinging
+                        end)
+
+                        -- Prediction positioning loop
+                        local Start = tick()
+                        camera.CameraSubject = _Humanoid
+                        Humanoid.Sit = false
+
+                        repeat
+                            task.wait()
+                            local Magnitude = _Root.Velocity.Magnitude
+                            local Direction = _Humanoid.MoveDirection or Vector3.zero
+                            local PredictionOffset
+
+                            if Magnitude < 5 then
+                                PredictionOffset = Vector3.new(0, math.random(-10, 4) / 10, 0)
+                            else
+                                local rng = 0.7 + math.random() * 7.3
+                                PredictionOffset = Direction * (Magnitude / rng) - Vector3.new(0, math.random(-10, 10) / 10, 0)
+                            end
+
+                            local PredictedCFrame = CFrame.new(_Root.Position + PredictionOffset)
+                            Humanoid.Sit = false
+                            HumanoidRootPart.CFrame = PredictedCFrame * CFrame.Angles(math.random(0, 360), 0, 0)
+
+                        until (tick() - Start >= 2)
+                            or (_Root.Velocity.Magnitude > 200)
+                            or not _Root
+                            or not _Root.Parent
+                            or not Loopvoid
+
+                        Flinging = false
+
+                        -- Snap back cleanly
+                        HumanoidRootPart.CFrame = OldPosition
+                        for _, part in ipairs(Character:GetChildren()) do
+                            if part:IsA("BasePart") then
+                                part.Velocity = Vector3.new(0, 0, 0)
+                                part.RotVelocity = Vector3.new(0, 0, 0)
+                            end
+                        end
+                        camera.CameraSubject = Humanoid
+
+                        task.wait(0.2)
+                    end
+
+                    task.wait(0.5)
+                end
+            end)
+        else
+            Loopvoid = false
+        end
+    end
+})
+
+RightGroupBoxPlayers:AddDivider()
+
+StatusLabelMain = RightGroupBoxPlayers:AddLabel('Loading...', true)
+
+local function UpdateMainStatus()
+    if not StatusLabelMain then return end
+    local nearbyLines = {}
+    local friendLines = {}
+    local featureLines = {}
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local hasChar = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            if hasChar then
+                local dist = math.floor((HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude)
+                if dist <= 60 then
+                    table.insert(nearbyLines, player.Name .. "  (" .. dist .. " studs)")
+                end
+            end
+            pcall(function()
+                if LocalPlayer:IsFriendsWith(player.UserId) then
+                    table.insert(friendLines, player.Name)
+                end
+            end)
+        end
+    end
+
+    local function featureStatus(label, state)
+        table.insert(featureLines, label .. ": " .. (state and "On" or "Off"))
+    end
+
+    featureStatus("Infinite Jump", InfJumpEnabled)
+    featureStatus("Walk Speed", WalkSpeedEnabled)
+    featureStatus("Fly", FlyEnabled)
+    featureStatus("Anti-Fling", AntiFlingEnabled)
+    featureStatus("Walk Fling", WalkFlingEnabled)
+    featureStatus("Aimbot", AimbotEnabled)
+    featureStatus("Loop TP", LoopTeleportPlayerEnabled)
+    featureStatus("Loop Fling", LoopFlingPlayerEnabled)
+    featureStatus("Fling All", Loopvoid)
+    featureStatus("Stay Grounded", StayGroundedEnabled)
+    featureStatus("Loop Reset", LoopResetEnabled)
+    featureStatus("View Player", ViewPlayerEnabled)
+
+    local nearbyText = #nearbyLines > 0 and table.concat(nearbyLines, "\n") or "None"
+    local friendText = #friendLines > 0 and table.concat(friendLines, ", ") or "None"
+    local featText = table.concat(featureLines, "\n")
+    local targetText = SelectedPlayerForTP or "None"
+
+    StatusLabelMain:SetText(
+        "Target: " .. targetText ..
+        "\nServer: " .. #Players:GetPlayers() .. " players" ..
+        "\n\nFriends In Game:\n" .. friendText ..
+        "\n\nNearby (60 studs):\n" .. nearbyText ..
+        "\n\nFeatures:\n" .. featText
+    )
+end
+
+RunService.Heartbeat:Connect(function()
+    pcall(UpdateMainStatus)
+end)
+
+Players.PlayerAdded:Connect(function(player)
+    task.wait(0.5)
+    RefreshMainPlayerDropdown()
+end)
+
+Players.PlayerRemoving:Connect(function(player)
+    task.wait(0.1)
+    RefreshMainPlayerDropdown()
+end)
+
+-- ==================================================
+-- TELEPORTS TAB
+-- ==================================================
+
+local LeftGroupBoxTeleport = Tabs.Teleports:AddLeftGroupbox('Teleports')
+local RightGroupBoxESP = Tabs.Teleports:AddRightGroupbox('ESP')
+
+LeftGroupBoxTeleport:AddButton({
+    Text = 'Random Teleport',
+    Func = function()
+        local randomX = math.random(-500, 500)
+        local randomZ = math.random(-500, 500)
+        local randomY = math.random(0, 1) == 0 and math.random(50, 200) or 5
+        HumanoidRootPart.CFrame = CFrame.new(Vector3.new(randomX, randomY, randomZ))
+    end,
+    DoubleClick = false,
+    Tooltip = 'Teleports to a random spot on the map'
+})
+
+LeftGroupBoxTeleport:AddToggle('SpamRandomTP', {
+    Text = 'Rapid Random Teleport',
+    Default = false,
+    Tooltip = 'Keeps teleporting to random locations automatically',
+    Callback = function(Value)
+        SpamRandomTeleportEnabled = Value
+        if SpamRandomTeleportEnabled then
+            spamRandomConnection = RunService.Heartbeat:Connect(function()
+                if not SpamRandomTeleportEnabled then return end
+                wait(SpamTeleportSpeed)
+                local randomX = math.random(-500, 500)
+                local randomZ = math.random(-500, 500)
+                local randomY = math.random(0, 1) == 0 and math.random(50, 200) or 5
+                HumanoidRootPart.CFrame = CFrame.new(Vector3.new(randomX, randomY, randomZ))
+            end)
+        else
+            if spamRandomConnection then spamRandomConnection:Disconnect() end
+        end
+    end
+})
+
+LeftGroupBoxTeleport:AddSlider('SpamTPSpeed', {
+    Text = 'Teleport Interval (sec)',
+    Default = 1,
+    Min = 0.1,
+    Max = 5,
+    Rounding = 1,
+    Compact = false,
+    Callback = function(Value)
+        SpamTeleportSpeed = Value
+    end
+})
+
+LeftGroupBoxTeleport:AddDivider()
+
+LeftGroupBoxTeleport:AddLabel('Waypoints')
+LeftGroupBoxTeleport:AddLabel('Waypoints are not saved after leaving', true)
+
+LeftGroupBoxTeleport:AddButton({
+    Text = 'Save Current Position',
+    Func = function()
+        WaypointCounter = WaypointCounter + 1
+        SavedWaypoints["Waypoint_" .. WaypointCounter] = HumanoidRootPart.CFrame
+    end,
+    DoubleClick = false,
+    Tooltip = 'Saves where you are right now'
+})
+
+LeftGroupBoxTeleport:AddButton({
+    Text = 'Teleport to Last Waypoint',
+    Func = function()
+        if WaypointCounter > 0 then
+            local last = SavedWaypoints["Waypoint_" .. WaypointCounter]
+            if last then HumanoidRootPart.CFrame = last end
+        end
+    end,
+    DoubleClick = false,
+    Tooltip = 'Teleports to the most recently saved waypoint'
+})
+
+LeftGroupBoxTeleport:AddButton({
+    Text = 'Clear All Waypoints',
+    Func = function()
+        SavedWaypoints = {}
+        WaypointCounter = 0
+    end,
+    DoubleClick = false,
+    Tooltip = 'Removes all saved waypoints'
+})
+
+LeftGroupBoxTeleport:AddDivider()
+
+StatusLabelTeleport = LeftGroupBoxTeleport:AddLabel('Loading...', true)
+
+local function UpdateTeleportStatus()
+    if not StatusLabelTeleport then return end
+    local spamStatus = SpamRandomTeleportEnabled and "On" or "Off"
+    local loopTPStatus = LoopTeleportPlayerEnabled and "On  (" .. LoopTeleportMode .. ")" or "Off"
+    StatusLabelTeleport:SetText(
+        "Waypoints Saved: " .. WaypointCounter ..
+        "\nRapid Teleport: " .. spamStatus ..
+        "\nLoop Teleport: " .. loopTPStatus ..
+        "\nTarget: " .. (SelectedPlayerForTP or "None")
+    )
+end
+
+RunService.Heartbeat:Connect(function()
+    pcall(UpdateTeleportStatus)
+end)
+
+-- ESP (right side of Teleports tab)
+
+RightGroupBoxESP:AddToggle('Chams', {
+    Text = 'Chams',
+    Default = false,
+    Tooltip = 'Highlights players through walls using Highlight instances',
+    Callback = function(Value)
+        ChamsEnabled = Value
+        for character, highlight in pairs(highlightedCharacters) do
+            highlight.Enabled = ChamsEnabled
+        end
+    end
+})
+
+RightGroupBoxESP:AddLabel('Chams Color'):AddColorPicker('ChamsColor', {
+    Default = Color3.fromRGB(255, 0, 0),
+    Title = 'Chams Fill Color',
+    Transparency = 0,
+    Callback = function(Value)
+        ChamsColor = Value
+        for character, highlight in pairs(highlightedCharacters) do
+            highlight.FillColor = ChamsColor
+        end
+    end
+})
+
+RightGroupBoxESP:AddToggle('ChamsTeamCheck', {
+    Text = 'Team Check',
+    Default = false,
+    Callback = function(Value)
+        ChamsTeamCheck = Value
+    end
+})
+
+RightGroupBoxESP:AddDivider()
+
+RightGroupBoxESP:AddToggle('BoxESP', {
+    Text = 'Box ESP',
+    Default = false,
+    Tooltip = 'Draws 2D boxes around all players',
+    Callback = function(Value)
+        BoxESPEnabled = Value
+    end
+})
+
+RightGroupBoxESP:AddLabel('Box Color'):AddColorPicker('BoxESPColor', {
+    Default = Color3.fromRGB(255, 255, 255),
+    Title = 'Box ESP Color',
+    Transparency = 0,
+    Callback = function(Value)
+        BoxESPColor = Value
+    end
+})
+
+RightGroupBoxESP:AddToggle('BoxTeamColor', {
+    Text = 'Use Team Color',
+    Default = false,
+    Callback = function(Value)
+        BoxTeamColor = Value
+    end
+})
+
+RightGroupBoxESP:AddDivider()
+
+RightGroupBoxESP:AddToggle('SkeletonESP', {
+    Text = 'Skeleton ESP',
+    Default = false,
+    Tooltip = 'Draws skeleton lines on players',
+    Callback = function(Value)
+        SkeletonESPEnabled = Value
+    end
+})
+
+RightGroupBoxESP:AddLabel('Skeleton Color'):AddColorPicker('SkeletonESPColor', {
+    Default = Color3.fromRGB(255, 255, 255),
+    Title = 'Skeleton ESP Color',
+    Transparency = 0,
+    Callback = function(Value)
+        SkeletonESPColor = Value
+    end
+})
+
+RightGroupBoxESP:AddToggle('SkeletonTeamColor', {
+    Text = 'Use Team Color',
+    Default = false,
+    Callback = function(Value)
+        SkeletonTeamColor = Value
+    end
+})
+
+RightGroupBoxESP:AddDivider()
+
+RightGroupBoxESP:AddToggle('Tracers', {
+    Text = 'Tracers',
+    Default = false,
+    Tooltip = 'Draws lines from the bottom of your screen to each player',
+    Callback = function(Value)
+        TracersEnabled = Value
+        for _, line in pairs(tracerDrawings) do
+            line.Visible = Value
+        end
+    end
+})
+
+RightGroupBoxESP:AddLabel('Tracer Color'):AddColorPicker('TracerColor', {
+    Default = Color3.fromRGB(255, 255, 255),
+    Title = 'Tracer Color',
+    Transparency = 0,
+    Callback = function(Value)
+        TracerColor = Value
+        for _, line in pairs(tracerDrawings) do
+            line.Color = TracerColor
+        end
+    end
+})
+
+-- ESP logic functions
+local function createHighlight(character)
+    local highlight = Instance.new("Highlight")
+    highlight.FillColor = ChamsColor
+    highlight.FillTransparency = 0
+    highlight.OutlineTransparency = 0
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.Adornee = character
+    highlight.Enabled = ChamsEnabled
+    highlight.Parent = character
+    highlightedCharacters[character] = highlight
+end
+
+local function createBox(player)
+    local box = Drawing.new("Square")
+    box.Visible = false
+    box.Color = BoxESPColor
+    box.Thickness = 1
+    box.Transparency = 1
+    box.Filled = false
+    boxDrawings[player] = box
+    return box
+end
+
+local function updateBox(player, box)
+    if not player or not player.Parent or not BoxESPEnabled or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+        box.Visible = false
+        return
+    end
+    local rootPart = player.Character.HumanoidRootPart
+    local head = player.Character:FindFirstChild("Head")
+    if not head then box.Visible = false return end
+    local rootPos, rootVis = camera:WorldToViewportPoint(rootPart.Position)
+    if not rootVis then box.Visible = false return end
+    local headPos = camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
+    local legPos = camera:WorldToViewportPoint(rootPart.Position - Vector3.new(0, 3, 0))
+    box.Size = Vector2.new(2350 / rootPos.Z, headPos.Y - legPos.Y)
+    box.Position = Vector2.new(rootPos.X - box.Size.X / 2, rootPos.Y - box.Size.Y / 2)
+    box.Color = BoxTeamColor and player.TeamColor.Color or BoxESPColor
+    box.Visible = true
+end
+
+local function createBone()
+    local bone = Drawing.new("Line")
+    bone.Visible = false
+    bone.Color = SkeletonESPColor
+    bone.Thickness = 1
+    bone.Transparency = 1
+    return bone
+end
+
+local function updateBonePos(bone, part1, part2)
+    if not part1 or not part2 then return end
+    local p1, v1 = camera:WorldToViewportPoint(part1.Position)
+    local p2, v2 = camera:WorldToViewportPoint(part2.Position)
+    if v1 and v2 then
+        bone.From = Vector2.new(p1.X, p1.Y)
+        bone.To = Vector2.new(p2.X, p2.Y)
+        bone.Visible = true
+    else
+        bone.Visible = false
+    end
+end
+
+local function createSkeleton(player)
+    local character = player.Character
+    if not character then return end
+    local bones = {}
+    for i = 1, 14 do bones[i] = createBone() end
+    skeletonDrawings[player] = bones
+    local function updateSkeleton()
+        if not SkeletonESPEnabled or not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+            for _, bone in ipairs(bones) do bone.Visible = false end
+            return
+        end
+        local isR15 = character:FindFirstChild("UpperTorso") ~= nil
+        if isR15 then
+            updateBonePos(bones[1], character:FindFirstChild("Head"), character:FindFirstChild("UpperTorso"))
+            updateBonePos(bones[2], character:FindFirstChild("UpperTorso"), character:FindFirstChild("LowerTorso"))
+            updateBonePos(bones[3], character:FindFirstChild("UpperTorso"), character:FindFirstChild("LeftUpperArm"))
+            updateBonePos(bones[4], character:FindFirstChild("LeftUpperArm"), character:FindFirstChild("LeftLowerArm"))
+            updateBonePos(bones[5], character:FindFirstChild("LeftLowerArm"), character:FindFirstChild("LeftHand"))
+            updateBonePos(bones[6], character:FindFirstChild("UpperTorso"), character:FindFirstChild("RightUpperArm"))
+            updateBonePos(bones[7], character:FindFirstChild("RightUpperArm"), character:FindFirstChild("RightLowerArm"))
+            updateBonePos(bones[8], character:FindFirstChild("RightLowerArm"), character:FindFirstChild("RightHand"))
+            updateBonePos(bones[9], character:FindFirstChild("LowerTorso"), character:FindFirstChild("LeftUpperLeg"))
+            updateBonePos(bones[10], character:FindFirstChild("LeftUpperLeg"), character:FindFirstChild("LeftLowerLeg"))
+            updateBonePos(bones[11], character:FindFirstChild("LeftLowerLeg"), character:FindFirstChild("LeftFoot"))
+            updateBonePos(bones[12], character:FindFirstChild("LowerTorso"), character:FindFirstChild("RightUpperLeg"))
+            updateBonePos(bones[13], character:FindFirstChild("RightUpperLeg"), character:FindFirstChild("RightLowerLeg"))
+            updateBonePos(bones[14], character:FindFirstChild("RightLowerLeg"), character:FindFirstChild("RightFoot"))
+        else
+            updateBonePos(bones[1], character:FindFirstChild("Head"), character:FindFirstChild("Torso"))
+            bones[2].Visible = false
+            updateBonePos(bones[3], character:FindFirstChild("Torso"), character:FindFirstChild("Left Arm"))
+            bones[4].Visible = false
+            bones[5].Visible = false
+            updateBonePos(bones[6], character:FindFirstChild("Torso"), character:FindFirstChild("Right Arm"))
+            bones[7].Visible = false
+            bones[8].Visible = false
+            updateBonePos(bones[9], character:FindFirstChild("Torso"), character:FindFirstChild("Left Leg"))
+            bones[10].Visible = false
+            bones[11].Visible = false
+            updateBonePos(bones[12], character:FindFirstChild("Torso"), character:FindFirstChild("Right Leg"))
+            bones[13].Visible = false
+            bones[14].Visible = false
+        end
+        for _, bone in ipairs(bones) do
+            bone.Color = SkeletonTeamColor and player.TeamColor.Color or SkeletonESPColor
+        end
+    end
+    skeletonConnections[player] = RunService.RenderStepped:Connect(updateSkeleton)
+end
+
+local function createTracer()
+    local line = Drawing.new("Line")
+    line.Thickness = 1
+    line.Color = TracerColor
+    line.Visible = false
+    return line
+end
+
+local function updateTracers()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local torsoPos, onScreen = camera:WorldToViewportPoint(player.Character.HumanoidRootPart.Position)
+            if onScreen then
+                if not tracerDrawings[player] then
+                    tracerDrawings[player] = createTracer()
+                end
+                tracerDrawings[player].From = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y)
+                tracerDrawings[player].To = Vector2.new(torsoPos.X, torsoPos.Y)
+                tracerDrawings[player].Visible = TracersEnabled
+            elseif tracerDrawings[player] then
+                tracerDrawings[player].Visible = false
+            end
+        elseif tracerDrawings[player] then
+            tracerDrawings[player].Visible = false
+        end
+    end
+end
+
+local function onCharacterAdded(character, player)
+    createSkeleton(player)
+    createBox(player)
+    createHighlight(character)
+    local humanoid = character:WaitForChild("Humanoid", 10)
+    if humanoid then
+        humanoid.Died:Connect(function()
+            if boxDrawings[player] then boxDrawings[player].Visible = false end
+            if tracerDrawings[player] then tracerDrawings[player].Visible = false end
+        end)
+    end
+end
+
+local function onPlayerAdded(player)
+    if player ~= LocalPlayer then
+        player.CharacterAdded:Connect(function(character)
+            onCharacterAdded(character, player)
+        end)
+        if player.Character then
+            onCharacterAdded(player.Character, player)
+        end
+    end
+end
+
+local function onPlayerRemoving(player)
+    if skeletonConnections[player] then
+        skeletonConnections[player]:Disconnect()
+        skeletonConnections[player] = nil
+    end
+    if skeletonDrawings[player] then
+        for _, bone in ipairs(skeletonDrawings[player]) do bone:Remove() end
+        skeletonDrawings[player] = nil
+    end
+    if boxDrawings[player] then
+        boxDrawings[player]:Remove()
+        boxDrawings[player] = nil
+    end
+    if player.Character then
+        local highlight = highlightedCharacters[player.Character]
+        if highlight then
+            highlight:Destroy()
+            highlightedCharacters[player.Character] = nil
+        end
+    end
+    if tracerDrawings[player] then
+        tracerDrawings[player]:Remove()
+        tracerDrawings[player] = nil
+    end
+end
+
+Players.PlayerAdded:Connect(onPlayerAdded)
+Players.PlayerRemoving:Connect(onPlayerRemoving)
+for _, player in ipairs(Players:GetPlayers()) do onPlayerAdded(player) end
+
+RunService.RenderStepped:Connect(function()
+    for player, box in pairs(boxDrawings) do
+        updateBox(player, box)
+    end
+    updateTracers()
+end)
+
+-- ==================================================
+-- SERVER TAB
+-- ==================================================
+
+local LeftGroupBoxServer = Tabs.Server:AddLeftGroupbox('Server')
+local RightGroupBoxMisc = Tabs.Server:AddRightGroupbox('Misc')
+
+-- Player Check
+LeftGroupBoxServer:AddToggle('PlayerCheck', {
+    Text = 'Player Check',
+    Default = false,
+    Tooltip = 'Rapidly teleports through every player on the server',
+    Callback = function(Value)
+        PlayerCheckEnabled = Value
+        if PlayerCheckEnabled then
+            spawn(function()
+                while PlayerCheckEnabled do
+                    for _, player in pairs(Players:GetPlayers()) do
+                        if not PlayerCheckEnabled then break end
+                        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+                            HumanoidRootPart.CFrame = player.Character.HumanoidRootPart.CFrame
+                            task.wait(PlayerCheckDelay)
+                        end
+                    end
+                    task.wait(0.1)
+                end
+            end)
+        end
+    end
+})
+
+LeftGroupBoxServer:AddSlider('PlayerCheckDelay', {
+    Text = 'Check Delay (sec)',
+    Default = 0.5,
+    Min = 0.1,
+    Max = 5,
+    Rounding = 1,
+    Compact = false,
+    Callback = function(Value)
+        PlayerCheckDelay = Value
+    end
+})
+
+LeftGroupBoxServer:AddDivider()
+
+-- Fling system helpers
+local function getPlrHum(char) return char:FindFirstChildOfClass("Humanoid") end
+local function getHead(char) return char:FindFirstChild("Head") end
+local function InstanceNew(class) return Instance.new(class) end
+local function Foreach(tbl, func) for i, v in pairs(tbl) do func(i, v) end end
+local function Wait() return task.wait() end
+
+local function SkidFling(TargetPlayer)
+    if LOOPPROTECT then LOOPPROTECT:Destroy() LOOPPROTECT = nil end
+    local Char = LocalPlayer.Character
+    local Hum = getPlrHum(Char)
+    local HRP = Hum and Hum.RootPart
+    if not Char or not Hum or not HRP then return end
+    local cam = Workspace.CurrentCamera
+    LOOPPROTECT = InstanceNew("Part")
+    LOOPPROTECT.Size = Vector3.new(1, 1, 1)
+    LOOPPROTECT.Transparency = 1
+    LOOPPROTECT.CanCollide = false
+    LOOPPROTECT.Anchored = false
+    LOOPPROTECT.Parent = cam
+    local weld = InstanceNew("WeldConstraint")
+    weld.Part0 = HRP
+    weld.Part1 = LOOPPROTECT
+    weld.Parent = LOOPPROTECT
+    local bodyGyro = InstanceNew("BodyGyro")
+    bodyGyro.MaxTorque = Vector3.new(400000, 400000, 400000)
+    bodyGyro.D = 1000
+    bodyGyro.P = 2000
+    bodyGyro.Parent = LOOPPROTECT
+    local RootPart = HRP
+    local TCharacter = TargetPlayer.Character
+    local THumanoid, TRootPart, THead, Accessory, Handle
+    if not TCharacter then if LOOPPROTECT then LOOPPROTECT:Destroy() LOOPPROTECT = nil end return end
+    if getPlrHum(TCharacter) then THumanoid = getPlrHum(TCharacter) end
+    if THumanoid and THumanoid.RootPart then TRootPart = THumanoid.RootPart end
+    if getHead(TCharacter) then THead = getHead(TCharacter) end
+    if TCharacter:FindFirstChildOfClass("Accessory") then Accessory = TCharacter:FindFirstChildOfClass("Accessory") end
+    if Accessory and Accessory:FindFirstChild("Handle") then Handle = Accessory.Handle end
+    if Char and Hum and HRP then
+        if not flingManager.lFlingOldPos or RootPart.Velocity.Magnitude < 50 then
+            flingManager.lFlingOldPos = RootPart.CFrame
+        end
+        if THumanoid and THumanoid.Sit then return end
+        if THead then
+            Workspace.CurrentCamera.CameraSubject = THead
+        elseif not THead and Handle then
+            Workspace.CurrentCamera.CameraSubject = Handle
+        elseif THumanoid and TRootPart then
+            Workspace.CurrentCamera.CameraSubject = THumanoid
+        end
+        if not TCharacter:FindFirstChildWhichIsA("BasePart") then return end
+        local FPos = function(BasePart, Pos, Ang)
+            RootPart.CFrame = CFrame.new(BasePart.Position) * Pos * Ang
+            Char:SetPrimaryPartCFrame(CFrame.new(BasePart.Position) * Pos * Ang)
+            local vel = RootPart.Velocity
+            RootPart.Velocity = vel * 99999999 + Vector3.new(0, 99999999, 0)
+            RootPart.RotVelocity = Vector3.new(9e8, 9e8, 9e8)
+        end
+        local SFBasePart = function(BasePart)
+            local TimeToWait = 2
+            local Time = tick()
+            local Angle = 0
+            repeat
+                if RootPart and THumanoid then
+                    if BasePart.Velocity.Magnitude < 50 then
+                        Angle = Angle + 100
+                        FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                        Wait()
+                        FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                        Wait()
+                        FPos(BasePart, CFrame.new(2.25, 1.5, -2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                        Wait()
+                        FPos(BasePart, CFrame.new(-2.25, -1.5, 2.25) + THumanoid.MoveDirection * BasePart.Velocity.Magnitude / 1.25, CFrame.Angles(math.rad(Angle), 0, 0))
+                        Wait()
+                        FPos(BasePart, CFrame.new(0, 1.5, 0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle), 0, 0))
+                        Wait()
+                        FPos(BasePart, CFrame.new(0, -1.5, 0) + THumanoid.MoveDirection, CFrame.Angles(math.rad(Angle), 0, 0))
+                        Wait()
+                    else
+                        FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+                        Wait()
+                        FPos(BasePart, CFrame.new(0, -1.5, -THumanoid.WalkSpeed), CFrame.Angles(0, 0, 0))
+                        Wait()
+                        FPos(BasePart, CFrame.new(0, 1.5, THumanoid.WalkSpeed), CFrame.Angles(math.rad(90), 0, 0))
+                        Wait()
+                        FPos(BasePart, CFrame.new(0, 1.5, TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(math.rad(90), 0, 0))
+                        Wait()
+                        FPos(BasePart, CFrame.new(0, -1.5, -TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(0, 0, 0))
+                        Wait()
+                        FPos(BasePart, CFrame.new(0, 1.5, TRootPart.Velocity.Magnitude / 1.25), CFrame.Angles(math.rad(90), 0, 0))
+                        Wait()
+                        FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(90), 0, 0))
+                        Wait()
+                        FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
+                        Wait()
+                        FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(math.rad(-90), 0, 0))
+                        Wait()
+                        FPos(BasePart, CFrame.new(0, -1.5, 0), CFrame.Angles(0, 0, 0))
+                        Wait()
+                    end
+                else
+                    break
+                end
+            until BasePart.Velocity.Magnitude > 500 or BasePart.Parent ~= TargetPlayer.Character or TargetPlayer.Parent ~= Players or not TargetPlayer.Character == TCharacter or THumanoid.Sit or Hum.Health <= 0 or tick() > Time + TimeToWait
+            if LOOPPROTECT then LOOPPROTECT:Destroy() LOOPPROTECT = nil end
+        end
+        Workspace.FallenPartsDestroyHeight = 0/0
+        local BV = InstanceNew("BodyVelocity")
+        BV.Parent = RootPart
+        BV.Velocity = Vector3.new(9e8, 9e8, 9e8)
+        BV.MaxForce = Vector3.new(1/0, 1/0, 1/0)
+        Hum:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+        if TRootPart and THead then
+            if (TRootPart.CFrame.p - THead.CFrame.p).Magnitude > 5 then
+                SFBasePart(THead)
+            else
+                SFBasePart(TRootPart)
+            end
+        elseif TRootPart and not THead then
+            SFBasePart(TRootPart)
+        elseif not TRootPart and THead then
+            SFBasePart(THead)
+        elseif not TRootPart and not THead and Accessory and Handle then
+            SFBasePart(Handle)
+        else
+            return
+        end
+        BV:Destroy()
+        Hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+        Workspace.CurrentCamera.CameraSubject = Hum
+        repeat
+            RootPart.CFrame = flingManager.lFlingOldPos * CFrame.new(0, 0.5, 0)
+            Char:SetPrimaryPartCFrame(flingManager.lFlingOldPos * CFrame.new(0, 0.5, 0))
+            Hum:ChangeState("GettingUp")
+            Foreach(Char:GetChildren(), function(_, x)
+                if x:IsA("BasePart") then
+                    x.Velocity, x.RotVelocity = Vector3.new(), Vector3.new()
+                end
+            end)
+            Wait()
+        until (RootPart.Position - flingManager.lFlingOldPos.p).Magnitude < 25
+        Workspace.FallenPartsDestroyHeight = OrgDestroyHeight
+        if LOOPPROTECT then LOOPPROTECT:Destroy() LOOPPROTECT = nil end
+    else
+        return
+    end
+end
+
+_G.NexusSkidFling = SkidFling
+
+-- Server status label
+StatusLabelServer = LeftGroupBoxServer:AddLabel('Loading...', true)
+
+local function UpdateServerStatus()
+    if not StatusLabelServer then return end
+    local totalPlayers = #Players:GetPlayers()
+    local nearbyCount = 0
+    local inViewCount = 0
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local dist = (HumanoidRootPart.Position - player.Character.HumanoidRootPart.Position).Magnitude
+            if dist <= 50 then nearbyCount = nearbyCount + 1 end
+            local _, onScreen = camera:WorldToScreenPoint(player.Character.HumanoidRootPart.Position)
+            if onScreen then inViewCount = inViewCount + 1 end
+        end
+    end
+    StatusLabelServer:SetText(
+        "Server Players: " .. totalPlayers ..
+        "\nNearby (50s): " .. nearbyCount ..
+        "\nIn View: " .. inViewCount ..
+        "\n\nPlayer Check: " .. (PlayerCheckEnabled and "On" or "Off") ..
+        "\nCheck Delay: " .. PlayerCheckDelay .. "s" ..
+        "\n\nMessage Spam: " .. (SpamMessageEnabled and "On" or "Off") ..
+        "\nSpam Delay: " .. SpamMessageDelay .. "s" ..
+        "\nMessage: " .. (MessageText ~= "" and MessageText or "(empty)")
+    )
+end
+
+RunService.Heartbeat:Connect(function()
+    pcall(UpdateServerStatus)
+end)
+
+-- Misc (right side)
+
+RightGroupBoxMisc:AddLabel('Server Messages')
+
+RightGroupBoxMisc:AddInput('MessageInput', {
+    Default = '',
+    Numeric = false,
+    Finished = false,
+    Text = 'Message Text',
+    Tooltip = 'The message to send in chat',
+    Placeholder = 'Type message here...',
+    Callback = function(Value)
+        MessageText = Value
+    end
+})
+
+RightGroupBoxMisc:AddButton({
+    Text = 'Send Message',
+    Func = function()
+        if MessageText ~= "" then
+            sendMessage(MessageText)
+        end
+    end,
+    DoubleClick = false,
+    Tooltip = 'Sends the message once to all chat'
+})
+
+RightGroupBoxMisc:AddToggle('SpamMessage', {
+    Text = 'Spam Message',
+    Default = false,
+    Tooltip = 'Continuously sends the message at the set interval',
+    Callback = function(Value)
+        SpamMessageEnabled = Value
+        if SpamMessageEnabled then
+            spawn(function()
+                while SpamMessageEnabled do
+                    if MessageText ~= "" then
+                        sendMessage(MessageText)
+                    end
+                    wait(SpamMessageDelay)
+                end
+            end)
+        end
+    end
+})
+
+RightGroupBoxMisc:AddSlider('SpamDelay', {
+    Text = 'Spam Interval (sec)',
+    Default = 1,
+    Min = 0.5,
+    Max = 10,
+    Rounding = 1,
+    Compact = false,
+    Callback = function(Value)
+        SpamMessageDelay = Value
+    end
+})
+
+RightGroupBoxMisc:AddToggle('SpamAllCaps', {
+    Text = 'Send As All Caps',
+    Default = false,
+    Tooltip = 'Sends the message in uppercase',
+    Callback = function(Value)
+        if Value then
+            MessageText = string.upper(MessageText)
+        end
+    end
+})
+
+RightGroupBoxMisc:AddDivider()
+
+RightGroupBoxMisc:AddLabel('View Player')
+
+local viewPlayerList = {}
+local function RefreshViewPlayerList()
+    viewPlayerList = {}
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            table.insert(viewPlayerList, player.Name)
+        end
+    end
+    if Options.ViewPlayerDropdownServer then
+        Options.ViewPlayerDropdownServer:SetValues(viewPlayerList)
+        if #viewPlayerList > 0 then
+            Options.ViewPlayerDropdownServer:SetValue(viewPlayerList[1])
+            SelectedPlayerToView = viewPlayerList[1]
+        end
+    end
+end
+
+RefreshViewPlayerList()
+if #viewPlayerList > 0 then SelectedPlayerToView = viewPlayerList[1] end
+
+RightGroupBoxMisc:AddDropdown('ViewPlayerDropdownServer', {
+    Values = viewPlayerList,
+    Default = 1,
+    Multi = false,
+    Text = 'Select Player to View',
+    Callback = function(Value)
+        SelectedPlayerToView = Value
+    end
+})
+
+RightGroupBoxMisc:AddButton({
+    Text = 'Reload View List',
+    Func = function()
+        RefreshViewPlayerList()
+    end,
+    DoubleClick = false,
+    Tooltip = 'Refresh the spectate player dropdown'
+})
+
+RightGroupBoxMisc:AddToggle('ViewPlayerServer', {
+    Text = 'View Selected Player',
+    Default = false,
+    Tooltip = 'Spectates the selected player',
+    Callback = function(Value)
+        ViewPlayerEnabled = Value
+        if ViewPlayerEnabled and SelectedPlayerToView then
+            local targetPlayer = Players:FindFirstChild(SelectedPlayerToView)
+            if targetPlayer and targetPlayer.Character then
+                camera.CameraSubject = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
+            end
+        else
+            camera.CameraSubject = Humanoid
+        end
+    end
+})
+
+-- ==================================================
+-- UPDATE LOG TAB
+-- ==================================================
+
+local UpdateLogLeft = Tabs.UpdateLog:AddLeftGroupbox('Update Log - ' .. os.date("%B %d, %Y"))
+
+UpdateLogLeft:AddLabel('v2.0 - Full Reorganization', true)
+UpdateLogLeft:AddDivider()
+
+UpdateLogLeft:AddLabel('Main Tab restructured into Local and Aimbot sections')
+UpdateLogLeft:AddLabel('Players panel moved to right side of Main tab')
+UpdateLogLeft:AddLabel('Teleports tab now holds all TP tools and ESP')
+UpdateLogLeft:AddLabel('Server tab simplified with Misc panel on right')
+UpdateLogLeft:AddDivider()
+
+UpdateLogLeft:AddLabel('Local Improvements', true)
+UpdateLogLeft:AddLabel('Walk Speed now uses RunService.Stepped loop for anti-cheat bypass')
+UpdateLogLeft:AddLabel('Anti-Fling is tighter, zeroes all part velocities on trigger')
+UpdateLogLeft:AddLabel('Anti-Fling detection threshold lowered for faster response')
+UpdateLogLeft:AddDivider()
+
+UpdateLogLeft:AddLabel('Players Panel', true)
+UpdateLogLeft:AddLabel('Type player name directly or use dropdown')
+UpdateLogLeft:AddLabel('Loop Teleport supports 6 position modes')
+UpdateLogLeft:AddLabel('Offset distance slider for Loop Teleport')
+UpdateLogLeft:AddLabel('Status label shows nearby players, friends, and feature states')
+UpdateLogLeft:AddDivider()
+
+UpdateLogLeft:AddLabel('Camera Modes', true)
+UpdateLogLeft:AddLabel('First Person, Third Person, 5th Person, 10th Person')
+UpdateLogLeft:AddLabel('Free Cam with WASD, mouse look, Shift for speed boost')
+UpdateLogLeft:AddLabel('Camera modes auto-disable each other when switched')
+
+local UpdateLogRight = Tabs.UpdateLog:AddRightGroupbox('Coming Soon')
+
+UpdateLogRight:AddLabel('Planned additions:')
+UpdateLogRight:AddLabel('More waypoint management options')
+UpdateLogRight:AddLabel('Additional ESP types')
+UpdateLogRight:AddLabel('Expanded player interaction tools')
+UpdateLogRight:AddLabel('Improved fling detection timings')
+
+-- ==================================================
+-- UI SETTINGS TAB
+-- ==================================================
+
+local MenuGroup = Tabs['UI Settings']:AddLeftGroupbox('Menu')
+
+MenuGroup:AddButton('Unload', function() Library:Unload() end)
+MenuGroup:AddLabel('Menu bind'):AddKeyPicker('MenuKeybind', {
+    Default = 'End',
+    NoUI = true,
+    Text = 'Menu keybind'
+})
+
+Library.ToggleKeybind = Options.MenuKeybind
+
+ThemeManager:SetLibrary(Library)
+SaveManager:SetLibrary(Library)
+
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({ 'MenuKeybind' })
+
+ThemeManager:SetFolder('Nexuscripts')
+SaveManager:SetFolder('Nexuscripts/configs')
+
+SaveManager:BuildConfigSection(Tabs['UI Settings'])
+ThemeManager:ApplyToTab(Tabs['UI Settings'])
+
+-- Character respawn
+LocalPlayer.CharacterAdded:Connect(function(newChar)
+    Character = newChar
+    Humanoid = newChar:WaitForChild("Humanoid")
+    HumanoidRootPart = newChar:WaitForChild("HumanoidRootPart")
+    camera = Workspace.CurrentCamera
+    wait(0.5)
+    if WalkFlingEnabled then
+        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
+        Humanoid.BreakJointsOnDeath = false
+        HumanoidRootPart.CanCollide = false
+        Humanoid:ChangeState(11)
+    end
+    if AntiFlingEnabled then
+        savedPosition = HumanoidRootPart.CFrame
+    end
+end)
+
+-- Watermark
+Library:SetWatermarkVisibility(false)
+local FrameTimer = tick()
+local FrameCounter = 0
+local FPS = 60
+
+local WatermarkConnection = RunService.RenderStepped:Connect(function()
+    FrameCounter = FrameCounter + 1
+    if (tick() - FrameTimer) >= 1 then
+        FPS = FrameCounter
+        FrameTimer = tick()
+        FrameCounter = 0
+    end
+    Library:SetWatermark(('fedscripts | %s fps | %s ms'):format(
+        math.floor(FPS),
+        math.floor(game:GetService('Stats').Network.ServerStatsItem['Data Ping']:GetValue())
+    ))
+end)
+
+Library.KeybindFrame.Visible = true
+
+Library:OnUnload(function()
+    WatermarkConnection:Disconnect()
+    Library.Unloaded = true
+end)
+
+Library:Notify('fedscripts loaded!', 5)
