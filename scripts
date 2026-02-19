@@ -1135,6 +1135,15 @@ RightGroupBoxPlayers:AddInput('PlayerNameInput', {
             SelectedPlayerForTP = Value
             SelectedPlayerForFling = Value
             SelectedPlayerToView = Value
+            -- Sync dropdown to match if the name exists in the list
+            if Options.MainPlayerDropdown then
+                for _, name in pairs(playerListMain) do
+                    if name:lower() == Value:lower() then
+                        Options.MainPlayerDropdown:SetValue(name)
+                        break
+                    end
+                end
+            end
         end
     end
 })
@@ -1149,11 +1158,32 @@ local function RefreshMainPlayerDropdown()
     end
     if Options.MainPlayerDropdown then
         Options.MainPlayerDropdown:SetValues(playerListMain)
-        if #playerListMain > 0 then
-            Options.MainPlayerDropdown:SetValue(playerListMain[1])
-            SelectedPlayerForTP = playerListMain[1]
-            SelectedPlayerForFling = playerListMain[1]
-            SelectedPlayerToView = playerListMain[1]
+        -- Only set to first player if nothing is selected yet
+        local currentSelectionStillValid = false
+        for _, name in pairs(playerListMain) do
+            if name == SelectedPlayerForTP then
+                currentSelectionStillValid = true
+                break
+            end
+        end
+        if not currentSelectionStillValid then
+            if #playerListMain > 0 then
+                Options.MainPlayerDropdown:SetValue(playerListMain[1])
+                SelectedPlayerForTP = playerListMain[1]
+                SelectedPlayerForFling = playerListMain[1]
+                SelectedPlayerToView = playerListMain[1]
+                -- Sync input box to show who is selected
+                if Options.PlayerNameInput then
+                    Options.PlayerNameInput:SetValue(playerListMain[1])
+                end
+            else
+                SelectedPlayerForTP = nil
+                SelectedPlayerForFling = nil
+                SelectedPlayerToView = nil
+            end
+        else
+            -- Re-select the same player in the dropdown after refresh
+            Options.MainPlayerDropdown:SetValue(SelectedPlayerForTP)
         end
     end
 end
@@ -1170,6 +1200,10 @@ RightGroupBoxPlayers:AddDropdown('MainPlayerDropdown', {
         SelectedPlayerForTP = Value
         SelectedPlayerForFling = Value
         SelectedPlayerToView = Value
+        -- Sync the input box to match
+        if Options.PlayerNameInput then
+            Options.PlayerNameInput:SetValue(Value)
+        end
     end
 })
 
