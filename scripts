@@ -2513,6 +2513,7 @@ UpdateLogLeft:AddLabel('Local Improvements', true)
 UpdateLogLeft:AddLabel('Walk Speed now uses RunService.Stepped loop for anti-cheat bypass')
 UpdateLogLeft:AddLabel('Anti-Fling is tighter, zeroes all part velocities on trigger')
 UpdateLogLeft:AddLabel('Anti-Fling detection threshold lowered for faster response')
+UpdateLogLeft:AddLabel('More waypoint management options')
 UpdateLogLeft:AddDivider()
 
 UpdateLogLeft:AddLabel('Players Panel', true)
@@ -2527,13 +2528,11 @@ UpdateLogLeft:AddLabel('First Person, Third Person, 5th Person, 10th Person')
 UpdateLogLeft:AddLabel('Free Cam with WASD, mouse look, Shift for speed boost')
 UpdateLogLeft:AddLabel('Camera modes auto-disable each other when switched')
 
+
 local UpdateLogRight = Tabs.UpdateLog:AddRightGroupbox('Coming Soon')
 
 UpdateLogRight:AddLabel('Planned additions:')
-UpdateLogRight:AddLabel('More waypoint management options')
-UpdateLogRight:AddLabel('Additional ESP types')
-UpdateLogRight:AddLabel('Expanded player interaction tools')
-UpdateLogRight:AddLabel('Improved fling detection timings')
+UpdateLogRight:AddLabel('Multi Person Fling')
 
 -- ==================================================
 -- UI SETTINGS TAB
