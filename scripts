@@ -1720,7 +1720,7 @@ LeftGroupBoxTeleport:AddSlider('WaypointLoopDelaySlider', {
     Max = 2,
     Rounding = 2,
     Compact = false,
-    Func = function(val)
+    Callback = function(val)
         WaypointLoopDelay = val
     end,
 })
@@ -1729,7 +1729,7 @@ LeftGroupBoxTeleport:AddToggle('WaypointLoopToggle', {
     Text = 'Loop Waypoints',
     Default = false,
     Tooltip = 'Cycles through all saved waypoints at the set interval',
-    Func = function(state)
+    Callback = function(state)
         WaypointLoopEnabled = state
         if WaypointLoopConnection then
             WaypointLoopConnection:Disconnect()
@@ -1758,7 +1758,7 @@ LeftGroupBoxTeleport:AddToggle('WaypointMaxSpeedToggle', {
     Text = 'Max Speed Loop',
     Default = false,
     Tooltip = 'Cycles through all waypoints every heartbeat, as fast as possible',
-    Func = function(state)
+    Callback = function(state)
         WaypointMaxSpeedEnabled = state
         if WaypointMaxSpeedConnection then
             WaypointMaxSpeedConnection:Disconnect()
@@ -1803,7 +1803,7 @@ local function UpdateTeleportStatus()
     local spamStatus = SpamRandomTeleportEnabled and "On" or "Off"
     local loopTPStatus = LoopTeleportPlayerEnabled and "On  (" .. LoopTeleportMode .. ")" or "Off"
     local wpLoopStatus = WaypointLoopEnabled and ("On  (idx: " .. WaypointLoopIndex .. "  |  " .. WaypointLoopDelay .. "s)") or "Off"
-    local maxSpeedStatus = WaypointMaxSpeedEnabled and "On  (idx: " .. WaypointLoopIndex .. ")" or "Off"
+    local maxSpeedStatus = WaypointMaxSpeedEnabled and ("On  (idx: " .. WaypointLoopIndex .. ")") or "Off"
     StatusLabelTeleport:SetText(
         "Waypoints Saved: " .. WaypointCounter ..
         "\nCurrent Index: " .. WaypointLoopIndex ..
