@@ -43,6 +43,12 @@ local AntiFlingEnabled = false
 
 local SavedWaypoints = {}
 local WaypointCounter = 0
+local WaypointLoopEnabled = false
+local WaypointLoopConnection = nil
+local WaypointMaxSpeedEnabled = false
+local WaypointMaxSpeedConnection = nil
+local WaypointLoopIndex = 1
+local WaypointLoopDelay = 0.1
 local SpamRandomTeleportEnabled = false
 local spamRandomConnection
 local SpamTeleportSpeed = 1
@@ -1641,7 +1647,7 @@ LeftGroupBoxTeleport:AddButton({
         SavedWaypoints["Waypoint_" .. WaypointCounter] = HumanoidRootPart.CFrame
     end,
     DoubleClick = false,
-    Tooltip = 'Saves where you are right now'
+    Tooltip = 'Saves your current position as a waypoint'
 })
 
 LeftGroupBoxTeleport:AddButton({
@@ -1649,7 +1655,10 @@ LeftGroupBoxTeleport:AddButton({
     Func = function()
         if WaypointCounter > 0 then
             local last = SavedWaypoints["Waypoint_" .. WaypointCounter]
-            if last then HumanoidRootPart.CFrame = last end
+            if last then
+                HumanoidRootPart.CFrame = last
+                HumanoidRootPart.CFrame = last
+            end
         end
     end,
     DoubleClick = false,
@@ -1657,13 +1666,132 @@ LeftGroupBoxTeleport:AddButton({
 })
 
 LeftGroupBoxTeleport:AddButton({
+    Text = 'Teleport to First Waypoint',
+    Func = function()
+        local first = SavedWaypoints["Waypoint_1"]
+        if first then
+            HumanoidRootPart.CFrame = first
+            HumanoidRootPart.CFrame = first
+        end
+    end,
+    DoubleClick = false,
+    Tooltip = 'Teleports to the first saved waypoint'
+})
+
+LeftGroupBoxTeleport:AddButton({
+    Text = 'Cycle Next Waypoint',
+    Func = function()
+        if WaypointCounter > 0 then
+            WaypointLoopIndex = (WaypointLoopIndex % WaypointCounter) + 1
+            local wp = SavedWaypoints["Waypoint_" .. WaypointLoopIndex]
+            if wp then
+                HumanoidRootPart.CFrame = wp
+                HumanoidRootPart.CFrame = wp
+            end
+        end
+    end,
+    DoubleClick = false,
+    Tooltip = 'Steps forward through your saved waypoints'
+})
+
+LeftGroupBoxTeleport:AddButton({
+    Text = 'Cycle Prev Waypoint',
+    Func = function()
+        if WaypointCounter > 0 then
+            WaypointLoopIndex = WaypointLoopIndex - 1
+            if WaypointLoopIndex < 1 then WaypointLoopIndex = WaypointCounter end
+            local wp = SavedWaypoints["Waypoint_" .. WaypointLoopIndex]
+            if wp then
+                HumanoidRootPart.CFrame = wp
+                HumanoidRootPart.CFrame = wp
+            end
+        end
+    end,
+    DoubleClick = false,
+    Tooltip = 'Steps backward through your saved waypoints'
+})
+
+LeftGroupBoxTeleport:AddDivider()
+
+LeftGroupBoxTeleport:AddSlider('WaypointLoopDelaySlider', {
+    Text = 'Loop Interval (seconds)',
+    Default = 0.1,
+    Min = 0.05,
+    Max = 2,
+    Rounding = 2,
+    Compact = false,
+    Func = function(val)
+        WaypointLoopDelay = val
+    end,
+})
+
+LeftGroupBoxTeleport:AddToggle('WaypointLoopToggle', {
+    Text = 'Loop Waypoints',
+    Default = false,
+    Tooltip = 'Cycles through all saved waypoints at the set interval',
+    Func = function(state)
+        WaypointLoopEnabled = state
+        if WaypointLoopConnection then
+            WaypointLoopConnection:Disconnect()
+            WaypointLoopConnection = nil
+        end
+        if state then
+            local lastTime = 0
+            WaypointLoopConnection = RunService.Heartbeat:Connect(function()
+                if not WaypointLoopEnabled or WaypointCounter == 0 then return end
+                local now = tick()
+                if (now - lastTime) >= WaypointLoopDelay then
+                    lastTime = now
+                    WaypointLoopIndex = (WaypointLoopIndex % WaypointCounter) + 1
+                    local wp = SavedWaypoints["Waypoint_" .. WaypointLoopIndex]
+                    if wp then
+                        HumanoidRootPart.CFrame = wp
+                        HumanoidRootPart.CFrame = wp
+                    end
+                end
+            end)
+        end
+    end,
+})
+
+LeftGroupBoxTeleport:AddToggle('WaypointMaxSpeedToggle', {
+    Text = 'Max Speed Loop',
+    Default = false,
+    Tooltip = 'Cycles through all waypoints every heartbeat, as fast as possible',
+    Func = function(state)
+        WaypointMaxSpeedEnabled = state
+        if WaypointMaxSpeedConnection then
+            WaypointMaxSpeedConnection:Disconnect()
+            WaypointMaxSpeedConnection = nil
+        end
+        if state then
+            WaypointMaxSpeedConnection = RunService.Heartbeat:Connect(function()
+                if not WaypointMaxSpeedEnabled or WaypointCounter == 0 then return end
+                WaypointLoopIndex = (WaypointLoopIndex % WaypointCounter) + 1
+                local wp = SavedWaypoints["Waypoint_" .. WaypointLoopIndex]
+                if wp then
+                    HumanoidRootPart.CFrame = wp
+                    HumanoidRootPart.CFrame = wp
+                    HumanoidRootPart.CFrame = wp
+                end
+            end)
+        end
+    end,
+})
+
+LeftGroupBoxTeleport:AddButton({
     Text = 'Clear All Waypoints',
     Func = function()
         SavedWaypoints = {}
         WaypointCounter = 0
+        WaypointLoopIndex = 1
+        WaypointLoopEnabled = false
+        WaypointMaxSpeedEnabled = false
+        if WaypointLoopConnection then WaypointLoopConnection:Disconnect() WaypointLoopConnection = nil end
+        if WaypointMaxSpeedConnection then WaypointMaxSpeedConnection:Disconnect() WaypointMaxSpeedConnection = nil end
     end,
     DoubleClick = false,
-    Tooltip = 'Removes all saved waypoints'
+    Tooltip = 'Removes all saved waypoints and stops all loops'
 })
 
 LeftGroupBoxTeleport:AddDivider()
@@ -1674,8 +1802,13 @@ local function UpdateTeleportStatus()
     if not StatusLabelTeleport then return end
     local spamStatus = SpamRandomTeleportEnabled and "On" or "Off"
     local loopTPStatus = LoopTeleportPlayerEnabled and "On  (" .. LoopTeleportMode .. ")" or "Off"
+    local wpLoopStatus = WaypointLoopEnabled and ("On  (idx: " .. WaypointLoopIndex .. "  |  " .. WaypointLoopDelay .. "s)") or "Off"
+    local maxSpeedStatus = WaypointMaxSpeedEnabled and "On  (idx: " .. WaypointLoopIndex .. ")" or "Off"
     StatusLabelTeleport:SetText(
         "Waypoints Saved: " .. WaypointCounter ..
+        "\nCurrent Index: " .. WaypointLoopIndex ..
+        "\nWaypoint Loop: " .. wpLoopStatus ..
+        "\nMax Speed Loop: " .. maxSpeedStatus ..
         "\nRapid Teleport: " .. spamStatus ..
         "\nLoop Teleport: " .. loopTPStatus ..
         "\nTarget: " .. (SelectedPlayerForTP or "None")
