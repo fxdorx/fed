@@ -1313,210 +1313,221 @@ RightGroupBoxPlayers:AddSlider('LoopTPDistance', {
 
 RightGroupBoxPlayers:AddDivider()
 
-local LoopFlingPlayerEnabled = false
-local FlingAllEnabled = false
-
-local function pumpVelocity()
-    local vel = HumanoidRootPart.AssemblyLinearVelocity
-    HumanoidRootPart.AssemblyLinearVelocity = vel * 99999 + Vector3.new(0, 99999, 0)
-    RunService.RenderStepped:Wait()
-    HumanoidRootPart.AssemblyLinearVelocity = vel
-    RunService.Stepped:Wait()
-    HumanoidRootPart.AssemblyLinearVelocity = vel + Vector3.new(0, 0.1, 0)
-end
-
-local function snapBackClean(oldCFrame)
-    for _, part in ipairs(Character:GetDescendants()) do
-        if part:IsA("BasePart") then
-            part.AssemblyLinearVelocity = Vector3.zero
-            part.AssemblyAngularVelocity = Vector3.zero
-        end
-    end
-    HumanoidRootPart.CFrame = oldCFrame
-    HumanoidRootPart.CFrame = oldCFrame
-    HumanoidRootPart.CFrame = oldCFrame
-    task.wait()
-    HumanoidRootPart.CFrame = oldCFrame
-    Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
-    camera.CameraSubject = Humanoid
-end
-
-local function doSingleFling(targetPlayer, loopFlag)
-    if not targetPlayer or not targetPlayer.Character then return false end
-    local _Humanoid = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
-    local _Root = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not _Humanoid or not _Root then return false end
-    if _Root.AssemblyLinearVelocity.Magnitude > 50 then return false end
-
-    local OldPosition = HumanoidRootPart.CFrame
-    local Flinging = true
-    local flung = false
-    Humanoid.Sit = false
-
-    -- Dedicated pump thread for this fling only
-    local pumpThread = task.spawn(function()
-        while Flinging do
-            local vel = HumanoidRootPart.AssemblyLinearVelocity
-            HumanoidRootPart.AssemblyLinearVelocity = vel * 99999 + Vector3.new(0, 99999, 0)
-            RunService.RenderStepped:Wait()
-            HumanoidRootPart.AssemblyLinearVelocity = vel
-            RunService.Stepped:Wait()
-            HumanoidRootPart.AssemblyLinearVelocity = vel + Vector3.new(0, 0.1, 0)
-            RunService.Heartbeat:Wait()
-        end
-    end)
-
-    camera.CameraSubject = _Humanoid
-
-    local Start = tick()
-    local angle = 0
-
-    -- Aggressive position hammer loop - multiple sets per task.wait
-    while tick() - Start < 2 and loopFlag() do
-        if not _Root or not _Root.Parent then break end
-
-        local Magnitude = _Root.AssemblyLinearVelocity.Magnitude
-
-        if Magnitude > 200 then
-            flung = true
-            break
-        end
-
-        local Direction = _Humanoid.MoveDirection or Vector3.zero
-        local PredictionOffset
-
-        if Magnitude < 5 then
-            PredictionOffset = Vector3.new(0, math.random(-10, 4) / 10, 0)
-        else
-            local rng = 0.7 + math.random() * 7.3
-            PredictionOffset = Direction * (Magnitude / rng) - Vector3.new(0, math.random(-10, 10) / 10, 0)
-        end
-
-        angle = angle + 90
-        local targetCFrame = CFrame.new(_Root.Position + PredictionOffset)
-            * CFrame.Angles(math.rad(angle), 0, 0)
-
-        -- Hammer it multiple times before waiting - this is what stops them escaping
-        HumanoidRootPart.CFrame = targetCFrame
-        HumanoidRootPart.CFrame = targetCFrame
-        Humanoid.Sit = false
-        RunService.Heartbeat:Wait()
-        HumanoidRootPart.CFrame = targetCFrame
-        HumanoidRootPart.CFrame = targetCFrame
-        Humanoid.Sit = false
-        task.wait()
-    end
-
-    Flinging = false
-    task.cancel(pumpThread)
-
-    task.wait()
-    snapBackClean(OldPosition)
-    return flung
-end
-
-local function waitForLanded(playerName)
-    local deadline = tick() + 12
-    while tick() < deadline and LoopFlingPlayerEnabled do
-        local tp = Players:FindFirstChild(playerName)
-        if not tp or not tp.Character then return end
-        local hrp = tp.Character:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
-        if hrp.AssemblyLinearVelocity.Magnitude < 20 then return end
-        task.wait(0.15)
-    end
-end
-
-RightGroupBoxPlayers:AddButton({
-    Text = 'Fling Player (Once)',
-    Func = function()
-        if not SelectedPlayerForFling or SelectedPlayerForFling == "" then return end
-        local targetPlayer = Players:FindFirstChild(SelectedPlayerForFling)
-        if not targetPlayer or not targetPlayer.Character then return end
-        if _G.NexusSkidFling then _G.NexusSkidFling(targetPlayer) end
-    end,
-    DoubleClick = false,
-    Tooltip = 'Fling the selected player one time'
-})
-
 RightGroupBoxPlayers:AddToggle('LoopFlingPlayerMain', {
     Text = 'Loop Fling Player',
     Default = false,
-    Tooltip = 'Flings the player, snaps back clean, repeats when they land',
+    Tooltip = 'Flings the player fast, snaps you back clean, repeats when they land',
     Callback = function(Value)
         LoopFlingPlayerEnabled = Value
-        if not Value then return end
-
-        if not SelectedPlayerForFling or SelectedPlayerForFling == "" then
-            Options.LoopFlingPlayerMain:SetValue(false)
-            return
-        end
-
-        task.spawn(function()
-            while LoopFlingPlayerEnabled do
-                local targetPlayer = Players:FindFirstChild(SelectedPlayerForFling)
-                if not targetPlayer or not targetPlayer.Character then
-                    task.wait(0.5)
-                    continue
-                end
-                local _Root = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if not _Root then
-                    task.wait(0.5)
-                    continue
-                end
-                if _Root.AssemblyLinearVelocity.Magnitude > 50 then
-                    task.wait(0.2)
-                    continue
-                end
-
-                doSingleFling(targetPlayer, function() return LoopFlingPlayerEnabled end)
-
-                if LoopFlingPlayerEnabled then
-                    waitForLanded(SelectedPlayerForFling)
-                end
+        if LoopFlingPlayerEnabled then
+            if not SelectedPlayerForFling or SelectedPlayerForFling == "" then
+                Options.LoopFlingPlayerMain:SetValue(false)
+                return
             end
-        end)
+            spawn(function()
+                while LoopFlingPlayerEnabled do
+                    local targetPlayer = Players:FindFirstChild(SelectedPlayerForFling)
+                    if not targetPlayer or not targetPlayer.Character then
+                        task.wait(1)
+                        continue
+                    end
+
+                    local _Humanoid = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    local _Root = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+                    if not _Humanoid or not _Root then
+                        task.wait(1)
+                        continue
+                    end
+
+                    -- Only fling when target is on the ground
+                    if _Root.Velocity.Magnitude > 50 then
+                        task.wait(0.3)
+                        continue
+                    end
+
+                    -- Save our position before starting
+                    local OldPosition = HumanoidRootPart.CFrame
+                    local Flinging = true
+
+                    -- The velocity pump that makes the fling actually work
+                    spawn(function()
+                        local Movel = 0.1
+                        repeat
+                            task.wait()
+                            local Velocity = HumanoidRootPart.Velocity
+                            HumanoidRootPart.Velocity = Velocity * 10000 + Vector3.new(0, 10000, 0)
+                            RunService.RenderStepped:Wait()
+                            HumanoidRootPart.Velocity = Velocity
+                            RunService.Stepped:Wait()
+                            HumanoidRootPart.Velocity = Velocity + Vector3.new(0, Movel, 0)
+                            Movel = Movel * -1
+                        until not Flinging
+                    end)
+
+                    -- Prediction-based positioning loop (2 second window or until flung)
+                    local Start = tick()
+                    camera.CameraSubject = _Humanoid
+                    Humanoid.Sit = false
+
+                    repeat
+                        task.wait()
+                        local Magnitude = _Root.Velocity.Magnitude
+                        local Direction = _Humanoid.MoveDirection or Vector3.zero
+                        local PredictionOffset
+
+                        if Magnitude < 5 then
+                            PredictionOffset = Vector3.new(0, math.random(-10, 4) / 10, 0)
+                        else
+                            local rng = 0.7 + math.random() * 7.3
+                            PredictionOffset = Direction * (Magnitude / rng) - Vector3.new(0, math.random(-10, 10) / 10, 0)
+                        end
+
+                        local PredictedCFrame = CFrame.new(_Root.Position + PredictionOffset)
+                        Humanoid.Sit = false
+                        HumanoidRootPart.CFrame = PredictedCFrame * CFrame.Angles(math.random(0, 360), 0, 0)
+
+                    until (tick() - Start >= 2)
+                        or (_Root.Velocity.Magnitude > 200)
+                        or not _Root
+                        or not _Root.Parent
+                        or not LoopFlingPlayerEnabled
+
+                    -- Stop the velocity pump
+                    Flinging = false
+
+                    -- Snap us back to original position cleanly
+                    HumanoidRootPart.CFrame = OldPosition
+                    for _, part in ipairs(Character:GetChildren()) do
+                        if part:IsA("BasePart") then
+                            part.Velocity = Vector3.new(0, 0, 0)
+                            part.RotVelocity = Vector3.new(0, 0, 0)
+                        end
+                    end
+                    camera.CameraSubject = Humanoid
+
+                    -- Wait for target to land before going again
+                    if LoopFlingPlayerEnabled then
+                        local landWait = tick()
+                        repeat
+                            task.wait(0.2)
+                            local tp = Players:FindFirstChild(SelectedPlayerForFling)
+                            if not tp or not tp.Character then break end
+                            local hrp = tp.Character:FindFirstChild("HumanoidRootPart")
+                            if not hrp then break end
+                            if tick() - landWait > 10 then break end
+                        until not LoopFlingPlayerEnabled
+                            or not Players:FindFirstChild(SelectedPlayerForFling)
+                            or (Players:FindFirstChild(SelectedPlayerForFling)
+                                and Players:FindFirstChild(SelectedPlayerForFling).Character
+                                and Players:FindFirstChild(SelectedPlayerForFling).Character:FindFirstChild("HumanoidRootPart")
+                                and Players:FindFirstChild(SelectedPlayerForFling).Character.HumanoidRootPart.Velocity.Magnitude < 25)
+                    end
+                end
+            end)
+        else
+            LoopFlingPlayerEnabled = false
+        end
     end
 })
 
 RightGroupBoxPlayers:AddToggle('FlingAllPlayers', {
     Text = 'Fling All Players',
     Default = false,
-    Tooltip = 'Flings every player on the server continuously',
+    Tooltip = 'Flings every player on the server continuously using the same method as Loop Fling',
     Callback = function(Value)
         Loopvoid = Value
-        if not Value then return end
-
-        task.spawn(function()
-            while Loopvoid do
-                local playersToFling = {}
-                for _, player in pairs(Players:GetPlayers()) do
-                    if player ~= LocalPlayer and player.Character then
-                        local hrp = player.Character:FindFirstChild("HumanoidRootPart")
-                        local hum = player.Character:FindFirstChildOfClass("Humanoid")
-                        if hrp and hum and hrp.AssemblyLinearVelocity.Magnitude < 50 then
-                            table.insert(playersToFling, player)
+        if Loopvoid then
+            spawn(function()
+                while Loopvoid do
+                    -- Build list of grounded players this tick
+                    local playersToFling = {}
+                    for _, player in pairs(Players:GetPlayers()) do
+                        if player ~= LocalPlayer and player.Character then
+                            local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+                            local hum = player.Character:FindFirstChildOfClass("Humanoid")
+                            if hrp and hum and hrp.Velocity.Magnitude < 50 then
+                                table.insert(playersToFling, player)
+                            end
                         end
                     end
-                end
 
-                -- Fling all grounded players in parallel
-                local threads = {}
-                for _, targetPlayer in ipairs(playersToFling) do
-                    if not Loopvoid then break end
-                    table.insert(threads, task.spawn(function()
-                        doSingleFling(targetPlayer, function() return Loopvoid end)
-                    end))
-                end
+                    for _, targetPlayer in ipairs(playersToFling) do
+                        if not Loopvoid then break end
+                        if not targetPlayer or not targetPlayer.Character then continue end
 
-                -- Wait for all parallel flings to finish before next round
-                for _, thread in ipairs(threads) do
-                    task.wait(0.05)
-                end
+                        local _Humanoid = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
+                        local _Root = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                        if not _Humanoid or not _Root then continue end
+                        if _Root.Velocity.Magnitude > 50 then continue end
 
-                task.wait(0.3)
-            end
-        end)
+                        local OldPosition = HumanoidRootPart.CFrame
+                        local Flinging = true
+
+                        -- Velocity pump
+                        spawn(function()
+                            local Movel = 0.1
+                            repeat
+                                task.wait()
+                                local Velocity = HumanoidRootPart.Velocity
+                                HumanoidRootPart.Velocity = Velocity * 10000 + Vector3.new(0, 10000, 0)
+                                RunService.RenderStepped:Wait()
+                                HumanoidRootPart.Velocity = Velocity
+                                RunService.Stepped:Wait()
+                                HumanoidRootPart.Velocity = Velocity + Vector3.new(0, Movel, 0)
+                                Movel = Movel * -1
+                            until not Flinging
+                        end)
+
+                        -- Prediction positioning loop
+                        local Start = tick()
+                        camera.CameraSubject = _Humanoid
+                        Humanoid.Sit = false
+
+                        repeat
+                            task.wait()
+                            local Magnitude = _Root.Velocity.Magnitude
+                            local Direction = _Humanoid.MoveDirection or Vector3.zero
+                            local PredictionOffset
+
+                            if Magnitude < 5 then
+                                PredictionOffset = Vector3.new(0, math.random(-10, 4) / 10, 0)
+                            else
+                                local rng = 0.7 + math.random() * 7.3
+                                PredictionOffset = Direction * (Magnitude / rng) - Vector3.new(0, math.random(-10, 10) / 10, 0)
+                            end
+
+                            local PredictedCFrame = CFrame.new(_Root.Position + PredictionOffset)
+                            Humanoid.Sit = false
+                            HumanoidRootPart.CFrame = PredictedCFrame * CFrame.Angles(math.random(0, 360), 0, 0)
+
+                        until (tick() - Start >= 2)
+                            or (_Root.Velocity.Magnitude > 200)
+                            or not _Root
+                            or not _Root.Parent
+                            or not Loopvoid
+
+                        Flinging = false
+
+                        -- Snap back cleanly
+                        HumanoidRootPart.CFrame = OldPosition
+                        for _, part in ipairs(Character:GetChildren()) do
+                            if part:IsA("BasePart") then
+                                part.Velocity = Vector3.new(0, 0, 0)
+                                part.RotVelocity = Vector3.new(0, 0, 0)
+                            end
+                        end
+                        camera.CameraSubject = Humanoid
+
+                        task.wait(0.2)
+                    end
+
+                    task.wait(0.5)
+                end
+            end)
+        else
+            Loopvoid = false
+        end
     end
 })
 
